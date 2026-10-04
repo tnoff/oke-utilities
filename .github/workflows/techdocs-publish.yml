@@ -34,7 +34,7 @@ permissions:
 jobs:
   publish:
     name: Generate and publish
-    uses: tnoff/github-workflows/.github/workflows/techdocs-publish.yml@ec70d150eae37b43217bcbda3da24cd705da8ac4
+    uses: tnoff/github-workflows/.github/workflows/techdocs-publish.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # techdocs-publish-v1.0.0
     with:
       entity_ref: default/Component/oke-scan
     secrets:
