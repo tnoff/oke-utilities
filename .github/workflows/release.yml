@@ -111,7 +111,7 @@ jobs:
     name: Assemble changelog
     permissions:
       contents: write
-    uses: tnoff/github-workflows/.github/workflows/assemble-changelog.yml@ec70d150eae37b43217bcbda3da24cd705da8ac4
+    uses: tnoff/github-workflows/.github/workflows/assemble-changelog.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # assemble-changelog-v1.0.0
     secrets:
       app_client_id: ${{ secrets.CI_APP_CLIENT_ID }}
       app_private_key: ${{ secrets.CI_APP_PRIVATE_KEY }}
@@ -121,7 +121,7 @@ jobs:
     needs: assemble-changelog
     permissions:
       contents: write
-    uses: tnoff/github-workflows/.github/workflows/tag.yml@ec70d150eae37b43217bcbda3da24cd705da8ac4
+    uses: tnoff/github-workflows/.github/workflows/tag.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # tag-v1.0.0
     with:
       gate_on_fragments: true
     secrets:
@@ -134,7 +134,7 @@ jobs:
     if: >-
       ${{ needs.changes.outputs.image == 'true'
           && !startsWith(github.event.head_commit.message, 'docs: assemble changelog') }}
-    uses: tnoff/github-workflows/.github/workflows/docker-push.yml@ec70d150eae37b43217bcbda3da24cd705da8ac4
+    uses: tnoff/github-workflows/.github/workflows/docker-push.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # docker-push-v1.0.0
     # registry / namespace / repo_name are INPUTS, not secrets. GitHub refuses
     # to set a job output containing secret material, so as secrets the `image`
     # output below comes back EMPTY and trigger-bump sends a blank IMAGE_NAME.
@@ -151,7 +151,7 @@ jobs:
   trigger-bump:
     name: Trigger docker-apps bump
     needs: push-image
-    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@ec70d150eae37b43217bcbda3da24cd705da8ac4
+    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # trigger-bump-dispatch-v1.0.0
     # Rewrites the pin in docker-apps apps/security-scanner/cronjob.yaml.
     with:
       bump_source: oke-scan
@@ -172,7 +172,7 @@ jobs:
     if: >-
       ${{ needs.changes.outputs.secret_age_image == 'true'
           && !startsWith(github.event.head_commit.message, 'docs: assemble changelog') }}
-    uses: tnoff/github-workflows/.github/workflows/docker-push.yml@ec70d150eae37b43217bcbda3da24cd705da8ac4
+    uses: tnoff/github-workflows/.github/workflows/docker-push.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # docker-push-v1.0.0
     with:
       registry: ${{ vars.OCI_REGISTRY }}
       namespace: ${{ vars.OCI_NAMESPACE }}
@@ -185,7 +185,7 @@ jobs:
   trigger-bump-secret-age:
     name: Trigger docker-apps bump (secret-age)
     needs: push-image-secret-age
-    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@ec70d150eae37b43217bcbda3da24cd705da8ac4
+    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # trigger-bump-dispatch-v1.0.0
     # Rewrites the pin in docker-apps apps/security-scanner/secret-age-tracker-cronjob.yaml.
     with:
       bump_source: secret-age-tracker
@@ -201,7 +201,7 @@ jobs:
     if: >-
       ${{ needs.changes.outputs.ocir_cleanup_image == 'true'
           && !startsWith(github.event.head_commit.message, 'docs: assemble changelog') }}
-    uses: tnoff/github-workflows/.github/workflows/docker-push.yml@ec70d150eae37b43217bcbda3da24cd705da8ac4
+    uses: tnoff/github-workflows/.github/workflows/docker-push.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # docker-push-v1.0.0
     with:
       registry: ${{ vars.OCI_REGISTRY }}
       namespace: ${{ vars.OCI_NAMESPACE }}
@@ -214,7 +214,7 @@ jobs:
   trigger-bump-ocir-cleanup:
     name: Trigger docker-apps bump (ocir-cleanup)
     needs: push-image-ocir-cleanup
-    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@ec70d150eae37b43217bcbda3da24cd705da8ac4
+    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # trigger-bump-dispatch-v1.0.0
     # Rewrites the pin in docker-apps images/kustomization.yaml for the
     # ocir_cleanup image, consumed by
     # apps/security-scanner/ocir-cleanup-cronjob.yaml (renamed from
