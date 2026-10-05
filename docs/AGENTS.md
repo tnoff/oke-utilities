@@ -110,7 +110,7 @@ Scan-only now: `create_metrics(meter_provider)` builds the `image_scan` gauge (r
 ### `packages/scan/src/scan/main.py`
 Orchestration only (cleanup is in `packages/ocir_cleanup/src/ocir_cleanup/main.py`):
 
-- `run_scan(config, logger_provider, scanner_metrics, notifier) -> set[Image]` — updates the Trivy DB, lists pods via `oke_scanner_core.k8s_client.KubernetesClient`, scans every discovered image, posts the Discord report, emits metrics.
+- `run_scan(config, logger_provider, scanner_metrics, notifier) -> set[Image]` — updates the Trivy DB, lists pods via `oke_scanner_core.k8s_client.KubernetesClient`, scans every discovered image plus `Config.extra_images` (`SCAN_EXTRA_IMAGES`, parsed by `parse_extra_images`; unioned with the discovered set so an image that is both is scanned once; an unparseable entry is logged and counted in `failed_scans` rather than aborting), posts the Discord report, emits metrics. Extras are scanned with the same `TRIVY_PLATFORM` as everything else, so a multi-arch extra is only scanned for that one platform. Do not add an extra image's repo to `OCIR_EXTRA_REPOSITORIES` unless you want `ocir-cleanup` pruning it; the two settings are independent.
 
 The `if __name__ == "__main__":` guard is marked `# pragma: no cover` (standard untestable pattern). A separate `__main__.py` does `sys.exit(main())` so `python -m scan` works.
 

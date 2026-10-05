@@ -18,6 +18,7 @@ def base_config():
         trivy_platform="",
         namespaces=[],
         exclude_namespaces=["kube-system", "kube-public"],
+        extra_images=[],
         discord_webhook_url="",
     )
 

@@ -43,6 +43,27 @@ def send_scan_metrics(metric_provider: Metrics, scan_results: CompleteScanResult
             'severity': 'high',
         })
 
+def parse_extra_images(references: list[str]) -> Tuple[set[Image], int]:
+    '''Build Images from SCAN_EXTRA_IMAGES entries, returning the images and a count of bad entries.
+
+    An entry must carry a tag (name:tag) or a digest (name@sha256:...); a bare name
+    is rejected rather than silently scanned as :latest.
+    '''
+    images = set()
+    invalid = 0
+    for reference in references:
+        last_segment = reference.rsplit('/', 1)[-1]
+        if ':' not in last_segment and '@' not in last_segment:
+            logger.error(f"Ignoring extra image without a tag or digest: {reference}")
+            invalid += 1
+            continue
+        try:
+            images.add(Image(reference))
+        except (IndexError, ValueError):
+            logger.error(f"Ignoring unparseable extra image: {reference}")
+            invalid += 1
+    return images, invalid
+
 def run_scan(
     config: Config,
     logger_provider: Optional[LoggerProvider],
@@ -60,8 +81,16 @@ def run_scan(
 
     logger.info("Discovering deployed container images...")
     images = k8s_client.get_all_images()
+    extra_images, invalid_extras = parse_extra_images(config.extra_images)
+    if extra_images:
+        logger.info(f"Adding {len(extra_images)} extra images to scan")
+    # Set union dedupes an extra that is also deployed (Image equality is by full_name)
+    images = images | extra_images
     logger.info(f"Beginning vulnerability scans ({len(images)} images)")
     scan_results = CompleteScanResult()
+    # Unparseable extras have no Image to report, but still show up in the failed count
+    for _ in range(invalid_extras):
+        scan_results.add_result(None)
 
     for idx, image in enumerate(sorted(images), 1):
         logger.info(f"[{idx}/{len(images)}] Scanning: {image.full_name}")
