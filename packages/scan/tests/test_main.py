@@ -2,7 +2,8 @@
 
 import pytest
 from unittest.mock import Mock, patch
-from scan.main import main, setup_otel, send_scan_metrics
+from oke_scanner_core.image import Image
+from scan.main import main, setup_otel, send_scan_metrics, parse_extra_images, run_scan
 
 
 class TestSetupOtel:
@@ -61,6 +62,7 @@ class TestMain:
     ):
         """Test main successful run."""
         mock_config = Mock()
+        mock_config.extra_images = []
         mock_config.discord_webhook_url = ""
         mock_config_class.from_env.return_value = mock_config
 
@@ -103,6 +105,7 @@ class TestMain:
     ):
         """Test main sends Discord notification when URL is configured."""
         mock_config = Mock()
+        mock_config.extra_images = []
         mock_config.discord_webhook_url = "https://discord.com/webhook"
         mock_config_class.from_env.return_value = mock_config
 
@@ -142,6 +145,7 @@ class TestMain:
     ):
         """Test that exceptions don't prevent telemetry flush."""
         mock_config = Mock()
+        mock_config.extra_images = []
         mock_config.discord_webhook_url = ""
         mock_config_class.from_env.return_value = mock_config
 
@@ -180,6 +184,7 @@ class TestMain:
     ):
         """Covers: db_update=False branch and the scanner_metrics branch."""
         mock_config = Mock()
+        mock_config.extra_images = []
         mock_config.discord_webhook_url = ""
         mock_config_class.from_env.return_value = mock_config
 
@@ -199,6 +204,92 @@ class TestMain:
         main()
 
         mock_send_metrics.assert_called_once()
+
+
+class TestParseExtraImages:
+    """Tests for parse_extra_images."""
+
+    def test_valid_references(self):
+        images, invalid = parse_extra_images([
+            "iad.ocir.io/tnoff/playball:latest",
+            "iad.ocir.io/tnoff/other@sha256:abc123",
+        ])
+        assert invalid == 0
+        assert {i.full_name for i in images} == {
+            "iad.ocir.io/tnoff/playball:latest",
+            "iad.ocir.io/tnoff/other@sha256:abc123",
+        }
+
+    def test_reference_without_tag_is_rejected(self):
+        images, invalid = parse_extra_images(["iad.ocir.io/tnoff/playball"])
+        assert images == set()
+        assert invalid == 1
+
+    def test_unparseable_reference_is_rejected(self):
+        # has '@' so passes the tag check, but Image cannot split it
+        images, invalid = parse_extra_images(["iad.ocir.io/tnoff/playball@nocolon"])
+        assert images == set()
+        assert invalid == 1
+
+    def test_bad_entry_does_not_drop_good_ones(self):
+        images, invalid = parse_extra_images(["notag", "iad.ocir.io/tnoff/playball:latest"])
+        assert [i.full_name for i in images] == ["iad.ocir.io/tnoff/playball:latest"]
+        assert invalid == 1
+
+    def test_empty_list(self):
+        assert parse_extra_images([]) == (set(), 0)
+
+
+class TestRunScanExtraImages:
+    """Tests for extra image handling in run_scan."""
+
+    @pytest.fixture
+    def scanner_and_k8s(self):
+        with patch('scan.main.TrivyScanner') as mock_scanner, patch('scan.main.KubernetesClient') as mock_k8s:
+            mock_scanner.return_value.update_database.return_value = True
+            mock_scanner.return_value.scan_image.return_value = None
+            yield mock_scanner.return_value, mock_k8s.return_value
+
+    def test_extras_scanned_in_addition_to_deployed(self, base_config, scanner_and_k8s):
+        scanner, k8s = scanner_and_k8s
+        k8s.get_all_images.return_value = {Image("iad.ocir.io/tnoff/app:1")}
+        base_config.extra_images = ["iad.ocir.io/tnoff/playball:latest"]
+
+        images = run_scan(base_config, None, None, None)
+
+        scanned = {call.args[0].full_name for call in scanner.scan_image.call_args_list}
+        assert scanned == {"iad.ocir.io/tnoff/app:1", "iad.ocir.io/tnoff/playball:latest"}
+        assert len(images) == 2
+
+    def test_extra_also_deployed_is_scanned_once(self, base_config, scanner_and_k8s):
+        scanner, k8s = scanner_and_k8s
+        k8s.get_all_images.return_value = {Image("iad.ocir.io/tnoff/playball:latest")}
+        base_config.extra_images = ["iad.ocir.io/tnoff/playball:latest"]
+
+        run_scan(base_config, None, None, None)
+
+        assert scanner.scan_image.call_count == 1
+
+    def test_bad_reference_does_not_abort_and_counts_as_failed(self, base_config, scanner_and_k8s):
+        scanner, k8s = scanner_and_k8s
+        k8s.get_all_images.return_value = set()
+        base_config.extra_images = ["notag", "iad.ocir.io/tnoff/playball:latest"]
+        notifier = Mock()
+
+        run_scan(base_config, None, None, notifier)
+
+        assert scanner.scan_image.call_count == 1
+        report = notifier.send_image_scan_report.call_args.args[0]
+        # one bad reference plus the good one whose (mocked) scan returned None
+        assert report.failed_scans == 2
+
+    def test_no_extras_scans_only_deployed(self, base_config, scanner_and_k8s):
+        scanner, k8s = scanner_and_k8s
+        k8s.get_all_images.return_value = {Image("iad.ocir.io/tnoff/app:1")}
+
+        run_scan(base_config, None, None, None)
+
+        assert scanner.scan_image.call_count == 1
 
 
 class TestSendScanMetrics:

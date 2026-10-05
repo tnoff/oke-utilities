@@ -17,6 +17,7 @@ class TestConfig:
         monkeypatch.setenv("TRIVY_PLATFORM", "linux/arm64")
         monkeypatch.setenv("SCAN_NAMESPACES", "default,kube-system")
         monkeypatch.setenv("EXCLUDE_NAMESPACES", "kube-node-lease")
+        monkeypatch.setenv("SCAN_EXTRA_IMAGES", "iad.ocir.io/tnoff/playball:latest, docker.io/library/alpine:3")
         monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/test")
 
         config = Config.from_env()
@@ -30,6 +31,7 @@ class TestConfig:
         assert config.trivy_platform == "linux/arm64"
         assert config.namespaces == ["default", "kube-system"]
         assert config.exclude_namespaces == ["kube-node-lease"]
+        assert config.extra_images == ["iad.ocir.io/tnoff/playball:latest", "docker.io/library/alpine:3"]
         assert config.discord_webhook_url == "https://discord.com/api/webhooks/test"
 
     def test_from_env_with_defaults(self):
@@ -46,7 +48,16 @@ class TestConfig:
         assert config.trivy_platform == ""
         assert config.namespaces == []
         assert config.exclude_namespaces == ["kube-system", "kube-public", "kube-node-lease"]
+        assert config.extra_images == []
         assert config.discord_webhook_url == ""
+
+    def test_extra_images_empty_and_blank_entries_filtered(self, monkeypatch):
+        """Test SCAN_EXTRA_IMAGES empty, or with stray commas/whitespace, gives no blank entries."""
+        monkeypatch.setenv("SCAN_EXTRA_IMAGES", "")
+        assert Config.from_env().extra_images == []
+
+        monkeypatch.setenv("SCAN_EXTRA_IMAGES", " , iad.ocir.io/tnoff/playball:latest,, ")
+        assert Config.from_env().extra_images == ["iad.ocir.io/tnoff/playball:latest"]
 
     def test_from_env_otlp_insecure_false(self, monkeypatch):
         """Test OTLP_INSECURE=false."""

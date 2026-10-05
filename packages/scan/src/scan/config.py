@@ -22,6 +22,8 @@ class Config:
     # Scanning configuration
     namespaces: list[str]
     exclude_namespaces: list[str]
+    # Extra full image references to scan in addition to deployed images
+    extra_images: list[str]
 
     # Discord webhook (optional — enabled if URL provided)
     discord_webhook_url: str
@@ -44,6 +46,7 @@ class Config:
             # Scanning configuration
             namespaces=os.getenv("SCAN_NAMESPACES", "").split(",") if os.getenv("SCAN_NAMESPACES") else [],
             exclude_namespaces=os.getenv("EXCLUDE_NAMESPACES", "kube-system,kube-public,kube-node-lease").split(","),
+            extra_images=[i.strip() for i in os.getenv("SCAN_EXTRA_IMAGES", "").split(",") if i.strip()],
 
             # Discord webhook configuration (optional - enabled if URL provided)
             discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL", ""),

@@ -124,6 +124,7 @@ Kubernetes Secrets.
 | `TRIVY_PLATFORM` | No | (auto) | Target platform for Trivy scans (e.g. `linux/amd64`) |
 | `SCAN_NAMESPACES` | No | (all) | Comma-separated namespaces to scan |
 | `EXCLUDE_NAMESPACES` | No | `kube-system,...` | Namespaces to exclude |
+| `SCAN_EXTRA_IMAGES` | No | `''` | Comma-separated full image references (`registry/ns/repo:tag`) to scan in addition to deployed images, e.g. images published but not run in the cluster. Entries need a tag or digest; a bad entry is logged and counted under "Scans Failed" without aborting the run |
 | `DISCORD_WEBHOOK_URL` | No | (disabled) | Discord webhook URL for the scan report |
 
 **OCIR Cleanup** (`packages/ocir_cleanup/src/ocir_cleanup/main.py`, `python -m ocir_cleanup`):
