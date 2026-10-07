@@ -8,7 +8,7 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "oke-scanner-core[telemetry]",
-    "oci==2.185.0",
+    "oci==2.187.1",
     "requests",
     # dappertable is GitHub-canonical. The GitLab copy still resolves, but its
     # tags stop at v1.1.5 while GitHub is on v1.1.6, so this pin could never be
