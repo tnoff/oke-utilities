@@ -36,7 +36,7 @@ jobs:
   # An empty or unreadable diff yields false, which runs everything.
   metadata:
     name: Detect metadata-only change
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -93,7 +93,7 @@ jobs:
     name: Detect image-input changes
     needs: metadata
     if: needs.metadata.outputs.only != 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -180,7 +180,7 @@ jobs:
     if: startsWith(github.head_ref, 'renovate/dev-')
     permissions:
       contents: write
-    uses: tnoff/github-workflows/.github/workflows/bump-version.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # bump-version-v1.0.0
+    uses: tnoff/github-workflows/.github/workflows/bump-version.yml@93f9034849dfd1d98ed72629241a503d29842205  # bump-version-v1.1.0
     with:
       bump_changelog: true
     secrets:
@@ -220,7 +220,7 @@ jobs:
     # exactly one context and the jobs underneath stay free to change.
     if: always()
     needs: [secrets, tox, changes, build, build-secret-age, build-ocir-cleanup, contracts, metadata]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
