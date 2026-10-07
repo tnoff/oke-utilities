@@ -36,7 +36,7 @@ jobs:
   # An empty or unreadable diff yields false, which runs everything.
   metadata:
     name: Detect metadata-only change
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -93,7 +93,7 @@ jobs:
     name: Detect image-input changes
     needs: metadata
     if: needs.metadata.outputs.only != 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -220,7 +220,7 @@ jobs:
     # exactly one context and the jobs underneath stay free to change.
     if: always()
     needs: [secrets, tox, changes, build, build-secret-age, build-ocir-cleanup, contracts, metadata]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
