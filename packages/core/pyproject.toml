@@ -17,7 +17,7 @@ dependencies = [
 # doesn't pull in the SDK/exporters it never uses.
 telemetry = [
     "opentelemetry-api",
-    "opentelemetry-sdk==1.44.0",
+    "opentelemetry-sdk==1.45.1",
     "opentelemetry-exporter-otlp",
     "opentelemetry-instrumentation",
     "opentelemetry-instrumentation-logging",
