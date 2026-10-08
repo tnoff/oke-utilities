@@ -13,7 +13,7 @@ dependencies = [
     # dappertable is GitHub-canonical. The GitLab copy still resolves, but its
     # tags stop at v1.1.5 while GitHub is on v1.1.6, so this pin could never be
     # bumped past the freeze. Verified installable at 1.1.4 from this URL.
-    "dappertable @ https://github.com/tnoff/dappertable/archive/refs/tags/v1.1.9.tar.gz",
+    "dappertable @ https://github.com/tnoff/dappertable/archive/refs/tags/v1.1.10.tar.gz",
 ]
 
 [project.optional-dependencies]
