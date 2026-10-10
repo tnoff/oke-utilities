@@ -28,7 +28,7 @@ oke-utilities/
 │   │   ├── pyproject.toml
 │   │   ├── src/scan/
 │   │   │   ├── main.py, __main__.py, config.py, scanner.py, discord_notifier.py
-│   │   │   └── telemetry.py  # the image_scan gauge only; setup/shutdown re-exported
+│   │   │   └── telemetry.py  # the image_scan/image_scan_failed gauges only; setup/shutdown re-exported
 │   │   │                     # from oke_scanner_core.telemetry, not defined here
 │   │   └── tests/
 │   ├── secret_age/       # secret-age-tracker: own package, own Dockerfile, own
@@ -77,23 +77,19 @@ Logs and metrics are exported via OTLP. **Tracing was deliberately removed** —
 
 ```python
 from logging import getLogger
-from opentelemetry.instrumentation.logging.handler import LoggingHandler
 
 logger = getLogger(__name__)
-
-class MyClass:
-    def __init__(self, cfg: Config, logger_provider):
-        self.cfg = cfg
-        if logger_provider:  # may be None when OTLP logs disabled
-            logger.addHandler(LoggingHandler(level=10, logger_provider=logger_provider))
 ```
 
 - Use standard Python `logging.getLogger()` — never `structlog`.
-- `logger_provider` and `meter_provider` may both be `None` when their OTLP component is disabled in config. Always check before using.
+- The OTLP `LoggingHandler` is attached **once**, to the root logger, by `oke_scanner_core.telemetry.setup_telemetry`. Never attach one to a module logger: records propagate to root, so a second handler exports every line twice (`packages/scan/tests/test_logging_once.py` guards this).
+- `logger_provider` and `meter_provider` may both be `None` when their OTLP component is disabled in config. They are only needed by `main()` for `shutdown_telemetry`; `meter_provider` gauges are reached via `scanner_metrics`.
 
 ## Metrics
 
-Single gauge metric (`image_scan`) defined in `telemetry.create_metrics()`. Attributes: `image` (string), `severity` (`critical` | `high`).
+Two gauges, defined in `telemetry.create_metrics()`:
+- `image_scan` — attributes `image` (string), `severity` (`critical` | `high`).
+- `image_scan_failed` — attribute `image` (string, the repo name); `1` if that image's scan failed this run, `0` if it succeeded, so a clean run reads zero rather than absent. An unparseable `SCAN_EXTRA_IMAGES` entry has no image to label and only shows up in the exit code.
 
 `create_metrics()` returns `None` when `meter_provider` is `None`. Always check before recording (`if self.metrics: ...`).
 
@@ -105,12 +101,12 @@ Single gauge metric (`image_scan`) defined in `telemetry.create_metrics()`. Attr
 Gated behind the `oke-scanner-core[telemetry]` extra (see File Structure above) -- don't add a new import here without checking it doesn't leak the OTel SDK into secret_age's dependency set.
 
 ### `packages/scan/src/scan/telemetry.py`
-Scan-only now: `create_metrics(meter_provider)` builds the `image_scan` gauge (returns `None` when its argument is `None`); `Metrics` is the dataclass wrapping it. Re-exports `setup_telemetry`/`shutdown_telemetry` from `oke_scanner_core.telemetry` so `main.py`'s existing `from .telemetry import ...` line didn't need to change.
+Scan-only now: `create_metrics(meter_provider)` builds the `image_scan` and `image_scan_failed` gauges (returns `None` when its argument is `None`); `Metrics` is the dataclass wrapping it. Re-exports `setup_telemetry`/`shutdown_telemetry` from `oke_scanner_core.telemetry` so `main.py`'s existing `from .telemetry import ...` line didn't need to change.
 
 ### `packages/scan/src/scan/main.py`
 Orchestration only (cleanup is in `packages/ocir_cleanup/src/ocir_cleanup/main.py`):
 
-- `run_scan(config, logger_provider, scanner_metrics, notifier) -> set[Image]` — updates the Trivy DB, lists pods via `oke_scanner_core.k8s_client.KubernetesClient`, scans every discovered image plus `Config.extra_images` (`SCAN_EXTRA_IMAGES`, parsed by `parse_extra_images`; unioned with the discovered set so an image that is both is scanned once; an unparseable entry is logged and counted in `failed_scans` rather than aborting), posts the Discord report, emits metrics. Extras are scanned with the same `TRIVY_PLATFORM` as everything else, so a multi-arch extra is only scanned for that one platform. Do not add an extra image's repo to `OCIR_EXTRA_REPOSITORIES` unless you want `ocir-cleanup` pruning it; the two settings are independent.
+- `run_scan(config, scanner_metrics, notifier) -> CompleteScanResult` — updates the Trivy DB, lists pods via `oke_scanner_core.k8s_client.KubernetesClient`, scans every discovered image plus `Config.extra_images` (`SCAN_EXTRA_IMAGES`, parsed by `parse_extra_images`; unioned with the discovered set so an image that is both is scanned once; an unparseable entry is logged and counted in `failed_scans` rather than aborting), posts the Discord report, emits metrics. Extras are scanned with the same `TRIVY_PLATFORM` as everything else, so a multi-arch extra is only scanned for that one platform. Do not add an extra image's repo to `OCIR_EXTRA_REPOSITORIES` unless you want `ocir-cleanup` pruning it; the two settings are independent.
 
 The `if __name__ == "__main__":` guard is marked `# pragma: no cover` (standard untestable pattern). A separate `__main__.py` does `sys.exit(main())` so `python -m scan` works.
 
@@ -120,7 +116,7 @@ The `if __name__ == "__main__":` guard is marked `# pragma: no cover` (standard 
 - `_cleanup_image_cache()` — removes `fanal/` from the Trivy cache after each scan to bound disk usage; the vulnerability DB is preserved.
 
 ### `packages/core/src/oke_scanner_core/k8s_client.py`
-- `KubernetesClient(namespaces, exclude_namespaces, logger_provider=None)` — takes the two discovery-scope lists directly, not a `Config` object, so it doesn't depend on any package's own Config shape.
+- `KubernetesClient(namespaces, exclude_namespaces)` — takes the two discovery-scope lists directly, not a `Config` object, so it doesn't depend on any package's own Config shape.
 - Calls `oke_scanner_core.k8s_auth.load_k8s_config()` for the incluster/kubeconfig-fallback bootstrap (see below) rather than inlining it.
 - `get_all_images()` enumerates namespaces (configured set or all-minus-exclusions), then collects images from regular + init containers across all pods.
 - Still carries the `kubernetes==36.0.0` bearer-token mirror workaround (`api_key['authorization']` → `api_key['BearerToken']`) — a no-op once upstream's naming agrees, so it's safe to leave even if the bug gets fixed.
@@ -159,11 +155,11 @@ Safety guards:
 - Deletion is opt-in via `OCIR_CLEANUP_ENABLED=true`.
 
 ### `packages/ocir_cleanup/src/ocir_cleanup/main.py`
-`run_cleanup(config, logger_provider, notifier)` — always lists pods itself via `KubernetesClient`. If `CLEANUP_REPO` is set, the run is scoped to that single OCIR repo (image set filtered + `extra_repositories=[cleanup_repo]` so cleanup happens even with nothing deployed); otherwise it sweeps every image and uses `config.ocir_extra_repositories`.
+`run_cleanup(config, notifier)` — always lists pods itself via `KubernetesClient`. If `CLEANUP_REPO` is set, the run is scoped to that single OCIR repo (image set filtered + `extra_repositories=[cleanup_repo]` so cleanup happens even with nothing deployed); otherwise it sweeps every image and uses `config.ocir_extra_repositories`.
 
 A one-off run with `CLEANUP_REPO=<repo>` still protects the deployed tag: the cluster is running the old tag, so `get_old_ocir_images` finds it via k8s discovery. The deployed CronJob leaves `CLEANUP_REPO` unset (it is the only scheduled pruner).
 
-`main()` returns an `int` (0/1); `__main__.py` does `sys.exit(main())`. Scan's `main()` returns `None`.
+`main()` returns an `int` (0/1); `__main__.py` does `sys.exit(main())`. Scan's `main()` also returns an `int`: 1 if any scan failed (`CompleteScanResult.failed_scans`, which includes unparseable extras), else 0, after telemetry is flushed. A config error still raises.
 
 ### `packages/scan/src/scan/discord_notifier.py` / `packages/ocir_cleanup/src/ocir_cleanup/discord_notifier.py`
 Each package keeps only the report-shape method(s) it needs, both wrapping `oke_scanner_core.discord_webhook.DiscordWebhookClient`:
@@ -241,13 +237,8 @@ Current state: **100% line coverage**, pylint 10.00/10, bandit clean.
 ### Adding observability to a new module
 1. `from logging import getLogger`
 2. `logger = getLogger(__name__)` at module level.
-3. Accept a `logger_provider` parameter in `__init__` (it may be `None`).
-4. Add the OTLP log handler with a `None` check:
-   ```python
-   if logger_provider:
-       logger.addHandler(LoggingHandler(level=10, logger_provider=logger_provider))
-   ```
-5. **Don't add tracing spans** — tracing is intentionally not wired up.
+3. Don't attach a log handler — the root logger's OTLP handler already exports it.
+4. **Don't add tracing spans** — tracing is intentionally not wired up.
 
 ### Adding a new metric
 1. Add the gauge/counter creation to `create_metrics()` in `packages/scan/src/scan/telemetry.py` and add it as a field on the `Metrics` dataclass. (Scan-only concept -- `packages/ocir_cleanup` has no metrics instrument of its own today.)
@@ -267,7 +258,7 @@ Current state: **100% line coverage**, pylint 10.00/10, bandit clean.
 2. **DO NOT** add tracing back without confirming intent — it was deliberately removed (logs + metrics only).
 3. **DO NOT** reintroduce `Image.version` / `ImageVersion` / semver comparison — they were removed along with the image-update check.
 4. **DO NOT** forget to update `packages/scan/tests/conftest.py::base_config` or `packages/ocir_cleanup/tests/conftest.py::base_config` when adding a field to the respective Config; each fixture constructs its dataclass directly, so a missing field raises `TypeError`.
-5. **DO NOT** forget to check `if logger_provider:` / `if self.metrics:` before using them — both can be `None`.
+5. **DO NOT** forget to check `if self.metrics:` before recording — it can be `None`.
 6. **DO NOT** commit real secrets — use `k8s/secret-example.yaml` as the template.
 7. **DO NOT** add a new unconditional import to `oke_scanner_core.telemetry` (or any other core module) without checking whether it belongs behind an extra — that module is the one place a careless addition would leak the OpenTelemetry SDK into `secret_age`'s image.
 8. **REMEMBER** OCIR deletion is destructive — keep `OCIR_CLEANUP_ENABLED=false` for any new repo until you've reviewed the dry-run recommendations.

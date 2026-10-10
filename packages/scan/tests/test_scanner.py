@@ -18,15 +18,10 @@ class TestTrivyScanner:
         return base_config
 
     @pytest.fixture
-    def logger_provider(self):
-        """Create mock logger provider."""
-        return Mock()
-
-    @pytest.fixture
-    def scanner(self, config, logger_provider):
+    def scanner(self, config):
         """Create a TrivyScanner instance."""
         with patch('scan.scanner.logger'):
-            return TrivyScanner(config, logger_provider)
+            return TrivyScanner(config)
 
     @pytest.fixture
     def sample_trivy_results(self):
@@ -243,7 +238,7 @@ class TestTrivyScanner:
         """Test that scan command includes --platform flag when TRIVY_PLATFORM is set."""
         config.trivy_platform = "linux/arm64"
         with patch('scan.scanner.logger'):
-            scanner = TrivyScanner(config, Mock())
+            scanner = TrivyScanner(config)
 
         mock_result = Mock()
         mock_result.stdout = json.dumps(sample_trivy_results)

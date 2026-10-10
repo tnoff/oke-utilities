@@ -25,7 +25,6 @@ logger = getLogger(__name__)
 
 def run_cleanup(
     config: CleanupConfig,
-    logger_provider,
     notifier: Optional[DiscordNotifier],
 ):
     """Run the OCIR tag + orphan-manifest cleanup phase.
@@ -34,7 +33,7 @@ def run_cleanup(
     OCIR repo (used by producer pipelines that fire a one-off Job after
     pushing). Otherwise it sweeps every deployed image.
     """
-    k8s_client = KubernetesClient(config.namespaces, config.exclude_namespaces, logger_provider)
+    k8s_client = KubernetesClient(config.namespaces, config.exclude_namespaces)
     discovered_images = k8s_client.get_all_images()
 
     if config.cleanup_repo:
@@ -114,7 +113,7 @@ def main() -> int:
         meter_provider, logger_provider = setup_telemetry(config)
         notifier = DiscordNotifier(config.discord_webhook_url) if config.discord_webhook_url else None
 
-        run_cleanup(config, logger_provider, notifier)
+        run_cleanup(config, notifier)
 
         logger.info("Run completed successfully")
 

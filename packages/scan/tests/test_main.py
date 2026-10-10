@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import Mock, patch
 from oke_scanner_core.image import Image
+from scan.scanner import CompleteScanResult, ScanResult
 from scan.main import main, setup_otel, send_scan_metrics, parse_extra_images, run_scan
 
 
@@ -85,6 +86,45 @@ class TestMain:
         # Should flush telemetry
         mock_meter_provider.force_flush.assert_called_once()
         mock_logger_provider.force_flush.assert_called_once()
+
+    @pytest.mark.parametrize('scan_succeeds,expected_exit', [(True, 0), (False, 1)])
+    @patch('scan.main.DiscordNotifier')
+    @patch('scan.main.logging')
+    @patch('scan.main.Config')
+    @patch('scan.main.setup_telemetry')
+    @patch('scan.main.create_metrics')
+    @patch('scan.main.TrivyScanner')
+    @patch('scan.main.KubernetesClient')
+    def test_main_exit_code_reflects_failed_scans(
+        self,
+        mock_k8s_client,
+        mock_scanner,
+        mock_create_metrics,
+        mock_setup_telemetry,
+        mock_config_class,
+        _mock_logging,
+        _mock_discord,
+        scan_succeeds,
+        expected_exit,
+    ):
+        """main() returns 1 if any scan failed, 0 on a clean run; telemetry is flushed either way."""
+        mock_config = Mock()
+        mock_config.extra_images = []
+        mock_config.discord_webhook_url = ""
+        mock_config_class.from_env.return_value = mock_config
+
+        mock_meter_provider = Mock()
+        mock_setup_telemetry.return_value = (mock_meter_provider, None)
+        mock_create_metrics.return_value = None
+
+        mock_scanner.return_value.update_database.return_value = True
+        mock_scanner.return_value.scan_image.return_value = (
+            ScanResult(Image("test.ocir.io/ns/app:v1")) if scan_succeeds else None
+        )
+        mock_k8s_client.return_value.get_all_images.return_value = {Image("test.ocir.io/ns/app:v1")}
+
+        assert main() == expected_exit
+        mock_meter_provider.force_flush.assert_called_once()
 
     @patch('scan.main.DiscordNotifier')
     @patch('scan.main.logging')
@@ -255,18 +295,18 @@ class TestRunScanExtraImages:
         k8s.get_all_images.return_value = {Image("iad.ocir.io/tnoff/app:1")}
         base_config.extra_images = ["iad.ocir.io/tnoff/playball:latest"]
 
-        images = run_scan(base_config, None, None, None)
+        results = run_scan(base_config, None, None)
 
         scanned = {call.args[0].full_name for call in scanner.scan_image.call_args_list}
         assert scanned == {"iad.ocir.io/tnoff/app:1", "iad.ocir.io/tnoff/playball:latest"}
-        assert len(images) == 2
+        assert len(results.failed_images) == 2
 
     def test_extra_also_deployed_is_scanned_once(self, base_config, scanner_and_k8s):
         scanner, k8s = scanner_and_k8s
         k8s.get_all_images.return_value = {Image("iad.ocir.io/tnoff/playball:latest")}
         base_config.extra_images = ["iad.ocir.io/tnoff/playball:latest"]
 
-        run_scan(base_config, None, None, None)
+        run_scan(base_config, None, None)
 
         assert scanner.scan_image.call_count == 1
 
@@ -276,7 +316,7 @@ class TestRunScanExtraImages:
         base_config.extra_images = ["notag", "iad.ocir.io/tnoff/playball:latest"]
         notifier = Mock()
 
-        run_scan(base_config, None, None, notifier)
+        run_scan(base_config, None, notifier)
 
         assert scanner.scan_image.call_count == 1
         report = notifier.send_image_scan_report.call_args.args[0]
@@ -287,7 +327,7 @@ class TestRunScanExtraImages:
         scanner, k8s = scanner_and_k8s
         k8s.get_all_images.return_value = {Image("iad.ocir.io/tnoff/app:1")}
 
-        run_scan(base_config, None, None, None)
+        run_scan(base_config, None, None)
 
         assert scanner.scan_image.call_count == 1
 
@@ -297,9 +337,6 @@ class TestSendScanMetrics:
 
     def test_sets_critical_and_high_gauges_per_scan_result(self):
         """send_scan_metrics emits one critical + one high gauge call per scan result."""
-        from scan.scanner import CompleteScanResult, ScanResult
-        from oke_scanner_core.image import Image
-
         complete = CompleteScanResult()
         scan = ScanResult(Image("test.ocir.io/ns/app:v1.0.0"))
         scan.critical_count = 2
@@ -313,3 +350,41 @@ class TestSendScanMetrics:
         call_args = [call.args for call in metrics.scan_total.set.call_args_list]
         assert (2, {'image': 'ns/app', 'severity': 'critical'}) in call_args
         assert (3, {'image': 'ns/app', 'severity': 'high'}) in call_args
+
+    def test_failed_scan_sets_failed_gauge_per_image(self):
+        """A failed image reads 1 and a successful one reads 0, so a clean run is zero, not absent."""
+        complete = CompleteScanResult()
+        ok = Image("test.ocir.io/ns/good:v1")
+        bad = Image("test.ocir.io/ns/bad:v1")
+        complete.add_result(ScanResult(ok), ok)
+        complete.add_result(None, bad)
+
+        metrics = Mock()
+        send_scan_metrics(metrics, complete)
+
+        failed_calls = [call.args for call in metrics.scan_failed.set.call_args_list]
+        assert (0, {'image': 'ns/good'}) in failed_calls
+        assert (1, {'image': 'ns/bad'}) in failed_calls
+        assert len(failed_calls) == 2
+
+    def test_clean_run_leaves_failed_gauge_at_zero(self):
+        complete = CompleteScanResult()
+        image = Image("test.ocir.io/ns/app:v1")
+        complete.add_result(ScanResult(image), image)
+
+        metrics = Mock()
+        send_scan_metrics(metrics, complete)
+
+        metrics.scan_failed.set.assert_called_once_with(0, {'image': 'ns/app'})
+
+    def test_failed_tag_wins_over_successful_tag_of_same_repo(self):
+        complete = CompleteScanResult()
+        ok = Image("test.ocir.io/ns/app:v1")
+        bad = Image("test.ocir.io/ns/app:v2")
+        complete.add_result(ScanResult(ok), ok)
+        complete.add_result(None, bad)
+
+        metrics = Mock()
+        send_scan_metrics(metrics, complete)
+
+        assert metrics.scan_failed.set.call_args_list[-1].args == (1, {'image': 'ns/app'})

@@ -9,8 +9,6 @@ import shutil
 import subprocess  # nosec B404
 from typing import Optional
 
-from opentelemetry.instrumentation.logging.handler import LoggingHandler
-
 from oke_scanner_core.image import Image
 
 from .config import Config
@@ -100,13 +98,11 @@ logger = getLogger(__name__)
 class TrivyScanner:
     """Wrapper for Trivy vulnerability scanner."""
 
-    def __init__(self, cfg: Config, logger_provider):
+    def __init__(self, cfg: Config):
         """Initialize Trivy scanner."""
         self.cfg = cfg
         self.db_updated = False
         self.cache_dir = Path.home() / ".cache" / "trivy"
-        if logger_provider:
-            logger.addHandler(LoggingHandler(level=10, logger_provider=logger_provider))
 
     def _cleanup_image_cache(self) -> None:
         """Remove cached image layers while preserving the vulnerability database."""
