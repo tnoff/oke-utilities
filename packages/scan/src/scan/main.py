@@ -7,7 +7,6 @@ from typing import Tuple, Optional
 
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.instrumentation.logging.handler import LoggingHandler
 from oke_scanner_core.image import Image
 from oke_scanner_core.k8s_client import KubernetesClient
 
@@ -22,10 +21,7 @@ logger = getLogger(__name__)
 def setup_otel(config: Config) -> Tuple[Optional[MeterProvider], Optional[LoggerProvider], Optional[Metrics]]:
     logger.debug("Initializing OpenTelemetry")
     meter_provider, logger_provider = setup_telemetry(config)
-
-    # Add OTLP logging handler if logs are enabled
-    if logger_provider:
-        logger.addHandler(LoggingHandler(level=10, logger_provider=logger_provider))
+    # The OTLP logging handler is attached once, to the root logger, in setup_telemetry
 
     # Create metrics (returns None if meter_provider is None)
     scanner_metrics = create_metrics(meter_provider)
@@ -42,6 +38,11 @@ def send_scan_metrics(metric_provider: Metrics, scan_results: CompleteScanResult
             'image': scan.image.repo_name,
             'severity': 'high',
         })
+        metric_provider.scan_failed.set(0, {'image': scan.image.repo_name})
+    # Set after the successes so an image with both a failed and a successful tag
+    # (same repo_name) reads as failed
+    for image in scan_results.failed_images:
+        metric_provider.scan_failed.set(1, {'image': image.repo_name})
 
 def parse_extra_images(references: list[str]) -> Tuple[set[Image], int]:
     '''Build Images from SCAN_EXTRA_IMAGES entries, returning the images and a count of bad entries.
@@ -66,18 +67,17 @@ def parse_extra_images(references: list[str]) -> Tuple[set[Image], int]:
 
 def run_scan(
     config: Config,
-    logger_provider: Optional[LoggerProvider],
     scanner_metrics: Optional[Metrics],
     notifier: Optional[DiscordNotifier],
-) -> set[Image]:
-    """Run the Trivy scan phase and return the discovered image set."""
-    scanner = TrivyScanner(config, logger_provider)
+) -> CompleteScanResult:
+    """Run the Trivy scan phase and return the results."""
+    scanner = TrivyScanner(config)
     logger.info("Updating Trivy vulnerability database...")
     if not scanner.update_database():
         logger.warning("Trivy database update failed, using cached database")
 
     logger.debug("Initializing Kubernetes client")
-    k8s_client = KubernetesClient(config.namespaces, config.exclude_namespaces, logger_provider)
+    k8s_client = KubernetesClient(config.namespaces, config.exclude_namespaces)
 
     logger.info("Discovering deployed container images...")
     images = k8s_client.get_all_images()
@@ -105,9 +105,9 @@ def run_scan(
         logger.info('Sending out scan metrics')
         send_scan_metrics(scanner_metrics, scan_results)
 
-    return images
+    return scan_results
 
-def main():
+def main() -> int:
     """Run the security scanner."""
     # Configure logging to DEBUG level and output to stdout
     logging.basicConfig(
@@ -130,12 +130,18 @@ def main():
         meter_provider, logger_provider, scanner_metrics = setup_otel(config)
         notifier = DiscordNotifier(config.discord_webhook_url) if config.discord_webhook_url else None
 
-        run_scan(config, logger_provider, scanner_metrics, notifier)
+        scan_results = run_scan(config, scanner_metrics, notifier)
 
-        logger.info("Run completed successfully")
+        if scan_results.failed_scans:
+            logger.error(f"Run completed with {scan_results.failed_scans} failed scans")
+        else:
+            logger.info("Run completed successfully")
 
     finally:
         shutdown_telemetry(meter_provider, logger_provider, logger)
+
+    # Exit non-zero on any failed scan so the Job/pod reads Failed, not Completed
+    return 1 if scan_results.failed_scans else 0
 
 
 if __name__ == "__main__":  # pragma: no cover

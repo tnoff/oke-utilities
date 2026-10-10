@@ -1,7 +1,6 @@
 """Kubernetes client for discovering deployed images."""
 
 from logging import getLogger
-from typing import Optional
 
 from kubernetes import client
 from kubernetes.client.rest import ApiException
@@ -15,25 +14,16 @@ logger = getLogger(__name__)
 class KubernetesClient:
     """Client for discovering container images deployed in the cluster."""
 
-    def __init__(self, namespaces: list[str], exclude_namespaces: list[str],
-                 logger_provider: Optional[object] = None):
+    def __init__(self, namespaces: list[str], exclude_namespaces: list[str]):
         """Initialize Kubernetes client.
 
         Args:
             namespaces: Namespaces to scan. Empty means "all namespaces
                 minus exclude_namespaces".
             exclude_namespaces: Namespaces to skip when namespaces is empty.
-            logger_provider: Optional OTel LoggerProvider. Deferred import so
-                packages that never pass one (e.g. secret_age, which uses
-                only oke_scanner_core.k8s_auth directly, not this class) do
-                not need opentelemetry-instrumentation-logging installed.
         """
         self.namespaces = namespaces
         self.exclude_namespaces = exclude_namespaces
-        if logger_provider:
-            from opentelemetry.instrumentation.logging.handler import LoggingHandler  # pylint: disable=import-outside-toplevel
-            logger.addHandler(LoggingHandler(level=10, logger_provider=logger_provider))
-
         load_k8s_config()
 
         # kubernetes==36.0.0 regression: load_*_config() stores the bearer

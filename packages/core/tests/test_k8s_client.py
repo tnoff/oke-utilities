@@ -12,18 +12,13 @@ class TestKubernetesClient:
     """Tests for KubernetesClient class."""
 
     @pytest.fixture
-    def logger_provider(self):
-        """Create mock logger provider."""
-        return Mock()
-
-    @pytest.fixture
-    def k8s_client(self, logger_provider):
+    def k8s_client(self):
         """Create a KubernetesClient instance with configured namespaces."""
         with patch('oke_scanner_core.k8s_client.load_k8s_config'), \
              patch('oke_scanner_core.k8s_client.client.CoreV1Api'):
-            return KubernetesClient(["default", "production"], [], logger_provider)
+            return KubernetesClient(["default", "production"], [])
 
-    def test_init_loads_k8s_config(self, logger_provider):
+    def test_init_loads_k8s_config(self):
         """__init__ delegates to the shared auth bootstrap.
 
         The incluster/kubeconfig-fallback behavior itself is
@@ -31,12 +26,12 @@ class TestKubernetesClient:
         """
         with patch('oke_scanner_core.k8s_client.load_k8s_config') as load_config, \
              patch('oke_scanner_core.k8s_client.client.CoreV1Api'):
-            KubernetesClient([], [], logger_provider)
+            KubernetesClient([], [])
         load_config.assert_called_once()
 
     @patch('oke_scanner_core.k8s_client.client.CoreV1Api')
     @patch('oke_scanner_core.k8s_client.load_k8s_config')
-    def test_init_mirrors_authorization_to_bearertoken(self, mock_load_config, _mock_core_api, logger_provider):
+    def test_init_mirrors_authorization_to_bearertoken(self, mock_load_config, _mock_core_api):
         """kubernetes==36 stores the bearer token under api_key['authorization'] but the
         generated API methods look it up under 'BearerToken'. KubernetesClient.__init__
         must mirror the value across so outgoing requests carry an Authorization header."""
@@ -50,7 +45,7 @@ class TestKubernetesClient:
                 k8s_client_mod.Configuration.set_default(cfg)
             mock_load_config.side_effect = populate_auth_like_v36
 
-            KubernetesClient([], [], logger_provider)
+            KubernetesClient([], [])
 
             final = k8s_client_mod.Configuration.get_default_copy()
             assert final.api_key.get('BearerToken') == 'bearer fake-token'
@@ -60,7 +55,7 @@ class TestKubernetesClient:
 
     @patch('oke_scanner_core.k8s_client.client.CoreV1Api')
     @patch('oke_scanner_core.k8s_client.load_k8s_config')
-    def test_init_does_not_overwrite_existing_bearertoken(self, mock_load_config, _mock_core_api, logger_provider):
+    def test_init_does_not_overwrite_existing_bearertoken(self, mock_load_config, _mock_core_api):
         """If the loader already populated 'BearerToken' (e.g. on a future fixed client),
         the mirror step must leave it alone."""
         from kubernetes import client as k8s_client_mod
@@ -73,25 +68,18 @@ class TestKubernetesClient:
                 k8s_client_mod.Configuration.set_default(cfg)
             mock_load_config.side_effect = populate_both
 
-            KubernetesClient([], [], logger_provider)
+            KubernetesClient([], [])
 
             assert k8s_client_mod.Configuration.get_default_copy().api_key['BearerToken'] == 'bearer new'
         finally:
             k8s_client_mod.Configuration.set_default(original)
-
-    def test_init_without_logger_provider_skips_otel_handler(self):
-        """logger_provider=None must not require opentelemetry-instrumentation-logging
-        to be installed -- the import is deferred inside the `if logger_provider:` branch."""
-        with patch('oke_scanner_core.k8s_client.load_k8s_config'), \
-             patch('oke_scanner_core.k8s_client.client.CoreV1Api'):
-            KubernetesClient([], [])  # logger_provider defaults to None
 
     def test_get_namespaces_uses_configured_namespaces(self, k8s_client):
         """Test _get_namespaces returns configured namespaces."""
         namespaces = k8s_client._get_namespaces()
         assert namespaces == ["default", "production"]
 
-    def test_get_namespaces_without_config_discovers_all(self, logger_provider):
+    def test_get_namespaces_without_config_discovers_all(self):
         """Test _get_namespaces discovers namespaces when none configured."""
         with patch('oke_scanner_core.k8s_client.load_k8s_config'), \
              patch('oke_scanner_core.k8s_client.client.CoreV1Api'):
@@ -107,7 +95,7 @@ class TestKubernetesClient:
             mock_list_result = Mock()
             mock_list_result.items = [ns1, ns2, ns3]
 
-            k8s = KubernetesClient([], ["kube-system"], logger_provider)
+            k8s = KubernetesClient([], ["kube-system"])
             k8s.core_v1.list_namespace.return_value = mock_list_result
 
             namespaces = k8s._get_namespaces()
@@ -177,11 +165,11 @@ class TestKubernetesClient:
             "iad.ocir.io/ns/app:v1.0.0",
         }
 
-    def test_get_all_images_reraises_namespace_list_failure(self, logger_provider):
+    def test_get_all_images_reraises_namespace_list_failure(self):
         """get_all_images propagates an ApiException raised by namespace discovery."""
         with patch('oke_scanner_core.k8s_client.load_k8s_config'), \
              patch('oke_scanner_core.k8s_client.client.CoreV1Api'):
-            k8s = KubernetesClient([], [], logger_provider)
+            k8s = KubernetesClient([], [])
 
         k8s.core_v1.list_namespace.side_effect = ApiException(status=500, reason="Boom")
 

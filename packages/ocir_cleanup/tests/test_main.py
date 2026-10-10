@@ -298,7 +298,7 @@ class TestRunCleanup:
         mock_registry_instance.get_orphaned_manifests.return_value = []
         mock_registry_client.return_value = mock_registry_instance
 
-        run_cleanup(cfg, None, None)
+        run_cleanup(cfg, None)
 
         call = mock_registry_instance.get_old_ocir_images.call_args
         assert call.args[0] == {target}
@@ -334,7 +334,7 @@ class TestRunCleanup:
         mock_registry_instance.get_orphaned_manifests.return_value = []
         mock_registry_client.return_value = mock_registry_instance
 
-        run_cleanup(cfg, None, None)
+        run_cleanup(cfg, None)
 
         mock_registry_instance.get_old_ocir_images.assert_called_once()
         mock_registry_instance.get_orphaned_manifests.assert_called_once()
@@ -363,7 +363,7 @@ class TestRunCleanup:
         mock_registry_instance.get_orphaned_manifests.return_value = []
         mock_registry_client.return_value = mock_registry_instance
 
-        run_cleanup(cfg, None, None)
+        run_cleanup(cfg, None)
 
         call = mock_registry_instance.get_old_ocir_images.call_args
         assert call.args[0] == discovered
