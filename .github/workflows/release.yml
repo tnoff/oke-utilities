@@ -134,19 +134,27 @@ jobs:
     if: >-
       ${{ needs.changes.outputs.image == 'true'
           && !startsWith(github.event.head_commit.message, 'docs: assemble changelog') }}
-    uses: tnoff/github-workflows/.github/workflows/docker-push.yml@a5e07a72bb76a983408e840c3cfcffa27cdbf738  # docker-push-v1.1.0
+    # Logs in to OCIR with a short-lived token from this job's GitHub OIDC identity, not a stored
+    # credential (tnoff/terraform#180). OCI maps this repo's push to main to a user that may push
+    # only this repo's OCIR repositories (terraform-admin ocir-pushers.tf).
+    permissions:
+      contents: read
+      id-token: write
+    uses: tnoff/github-workflows/.github/workflows/docker-push-oidc.yml@5a6f80dffddfa833301b438ec9b2052d7f2c24f2  # docker-push-oidc-v1.0.0
     # registry / namespace / repo_name are INPUTS, not secrets. GitHub refuses
     # to set a job output containing secret material, so as secrets the `image`
     # output below comes back EMPTY and trigger-bump sends a blank IMAGE_NAME.
     # See github-workflows!98.
     with:
+      oidc_exchange_domain_url: ${{ vars.OIDC_EXCHANGE_DOMAIN_URL }}
+      oidc_exchange_client_id: ${{ vars.OIDC_EXCHANGE_CLIENT_ID }}
       registry: ${{ vars.OCI_REGISTRY }}
       namespace: ${{ vars.OCI_NAMESPACE }}
       repo_name: oke-scan
       dockerfile: packages/scan/Dockerfile
     secrets:
-      oci_username: ${{ secrets.OCI_USERNAME }}
-      oci_token: ${{ secrets.OCI_TOKEN }}
+      oidc_exchange_client_secret: ${{ secrets.OIDC_EXCHANGE_CLIENT_SECRET }}
+      oci_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
   trigger-bump:
     name: Trigger docker-apps bump
@@ -172,15 +180,23 @@ jobs:
     if: >-
       ${{ needs.changes.outputs.secret_age_image == 'true'
           && !startsWith(github.event.head_commit.message, 'docs: assemble changelog') }}
-    uses: tnoff/github-workflows/.github/workflows/docker-push.yml@a5e07a72bb76a983408e840c3cfcffa27cdbf738  # docker-push-v1.1.0
+    # Logs in to OCIR with a short-lived token from this job's GitHub OIDC identity, not a stored
+    # credential (tnoff/terraform#180). OCI maps this repo's push to main to a user that may push
+    # only this repo's OCIR repositories (terraform-admin ocir-pushers.tf).
+    permissions:
+      contents: read
+      id-token: write
+    uses: tnoff/github-workflows/.github/workflows/docker-push-oidc.yml@5a6f80dffddfa833301b438ec9b2052d7f2c24f2  # docker-push-oidc-v1.0.0
     with:
+      oidc_exchange_domain_url: ${{ vars.OIDC_EXCHANGE_DOMAIN_URL }}
+      oidc_exchange_client_id: ${{ vars.OIDC_EXCHANGE_CLIENT_ID }}
       registry: ${{ vars.OCI_REGISTRY }}
       namespace: ${{ vars.OCI_NAMESPACE }}
       repo_name: secret_age_tracker
       dockerfile: packages/secret_age/Dockerfile
     secrets:
-      oci_username: ${{ secrets.OCI_USERNAME }}
-      oci_token: ${{ secrets.OCI_TOKEN }}
+      oidc_exchange_client_secret: ${{ secrets.OIDC_EXCHANGE_CLIENT_SECRET }}
+      oci_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
   trigger-bump-secret-age:
     name: Trigger docker-apps bump (secret-age)
@@ -201,15 +217,23 @@ jobs:
     if: >-
       ${{ needs.changes.outputs.ocir_cleanup_image == 'true'
           && !startsWith(github.event.head_commit.message, 'docs: assemble changelog') }}
-    uses: tnoff/github-workflows/.github/workflows/docker-push.yml@a5e07a72bb76a983408e840c3cfcffa27cdbf738  # docker-push-v1.1.0
+    # Logs in to OCIR with a short-lived token from this job's GitHub OIDC identity, not a stored
+    # credential (tnoff/terraform#180). OCI maps this repo's push to main to a user that may push
+    # only this repo's OCIR repositories (terraform-admin ocir-pushers.tf).
+    permissions:
+      contents: read
+      id-token: write
+    uses: tnoff/github-workflows/.github/workflows/docker-push-oidc.yml@5a6f80dffddfa833301b438ec9b2052d7f2c24f2  # docker-push-oidc-v1.0.0
     with:
+      oidc_exchange_domain_url: ${{ vars.OIDC_EXCHANGE_DOMAIN_URL }}
+      oidc_exchange_client_id: ${{ vars.OIDC_EXCHANGE_CLIENT_ID }}
       registry: ${{ vars.OCI_REGISTRY }}
       namespace: ${{ vars.OCI_NAMESPACE }}
       repo_name: ocir_cleanup
       dockerfile: packages/ocir_cleanup/Dockerfile
     secrets:
-      oci_username: ${{ secrets.OCI_USERNAME }}
-      oci_token: ${{ secrets.OCI_TOKEN }}
+      oidc_exchange_client_secret: ${{ secrets.OIDC_EXCHANGE_CLIENT_SECRET }}
+      oci_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
   trigger-bump-ocir-cleanup:
     name: Trigger docker-apps bump (ocir-cleanup)
