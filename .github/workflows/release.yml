@@ -57,6 +57,7 @@ jobs:
       image: ${{ steps.filter.outputs.image }}
       secret_age_image: ${{ steps.filter.outputs.secret_age_image }}
       ocir_cleanup_image: ${{ steps.filter.outputs.ocir_cleanup_image }}
+      jwks_publisher_image: ${{ steps.filter.outputs.jwks_publisher_image }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -80,12 +81,14 @@ jobs:
             echo "image=true" >> "$GITHUB_OUTPUT"
             echo "secret_age_image=true" >> "$GITHUB_OUTPUT"
             echo "ocir_cleanup_image=true" >> "$GITHUB_OUTPUT"
+            echo "jwks_publisher_image=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           FILES="$(git diff --name-only "${BEFORE}" "${AFTER}")"
           IMAGE=false
           SECRET_AGE_IMAGE=false
           OCIR_CLEANUP_IMAGE=false
+          JWKS_PUBLISHER_IMAGE=false
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             case "$f" in
@@ -97,15 +100,21 @@ jobs:
             case "$f" in
               packages/core/*|packages/ocir_cleanup/*) OCIR_CLEANUP_IMAGE=true ;;
             esac
+            # No packages/core here: the publisher does not depend on it.
+            case "$f" in
+              packages/jwks_publisher/*) JWKS_PUBLISHER_IMAGE=true ;;
+            esac
           done <<< "${FILES}"
           echo "changed files:"
           printf '%s\n' "${FILES}" | sed -n 's/^/  /p'
           echo "image inputs changed: ${IMAGE}"
           echo "secret-age image inputs changed: ${SECRET_AGE_IMAGE}"
           echo "ocir-cleanup image inputs changed: ${OCIR_CLEANUP_IMAGE}"
+          echo "jwks-publisher image inputs changed: ${JWKS_PUBLISHER_IMAGE}"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "secret_age_image=${SECRET_AGE_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "ocir_cleanup_image=${OCIR_CLEANUP_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "jwks_publisher_image=${JWKS_PUBLISHER_IMAGE}" >> "$GITHUB_OUTPUT"
 
   assemble-changelog:
     name: Assemble changelog
@@ -250,3 +259,31 @@ jobs:
     secrets:
       app_client_id: ${{ secrets.CI_APP_CLIENT_ID }}
       app_private_key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+  # Push only for now: the docker-apps pin for this image does not exist yet, and the
+  # bump workflow rewrites an existing pin. Once the first image is pushed and pinned in
+  # docker-apps (images/kustomization.yaml), a follow-up adds the trigger-bump job
+  # (bump_source: jwks-publisher, already mapped in docker-apps' bump-image-pin.yml).
+  push-image-jwks-publisher:
+    name: Push jwks-publisher image
+    needs: changes
+    if: >-
+      ${{ needs.changes.outputs.jwks_publisher_image == 'true'
+          && !startsWith(github.event.head_commit.message, 'docs: assemble changelog') }}
+    # Logs in to OCIR with a short-lived token from this job's GitHub OIDC identity, not a stored
+    # credential (tnoff/terraform#180). OCI maps this repo's push to main to a user that may push
+    # only this repo's OCIR repositories (terraform-admin ocir-pushers.tf, which names jwks_publisher).
+    permissions:
+      contents: read
+      id-token: write
+    uses: tnoff/github-workflows/.github/workflows/docker-push-oidc.yml@5a6f80dffddfa833301b438ec9b2052d7f2c24f2  # docker-push-oidc-v1.0.0
+    with:
+      oidc_exchange_domain_url: ${{ vars.OIDC_EXCHANGE_DOMAIN_URL }}
+      oidc_exchange_client_id: ${{ vars.OIDC_EXCHANGE_CLIENT_ID }}
+      registry: ${{ vars.OCI_REGISTRY }}
+      namespace: ${{ vars.OCI_NAMESPACE }}
+      repo_name: jwks_publisher
+      dockerfile: packages/jwks_publisher/Dockerfile
+    secrets:
+      oidc_exchange_client_secret: ${{ secrets.OIDC_EXCHANGE_CLIENT_SECRET }}
+      oci_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
