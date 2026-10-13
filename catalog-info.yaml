@@ -8,9 +8,10 @@
 # / grafana selectors still assert targets that don't exist yet, so they stay
 # out until those plugins are wired up.
 #
-# Four library Components now, one per real deployable
-# (docs/projects/oke-security-scanner-package-split.md), where there used to
-# be one standing in for all three CronJobs' image. Each of the three
+# Five library Components now: one per real deployable (oke-scan,
+# secret-age-tracker, ocir-cleanup, jwks-publisher) plus the shared
+# oke-scanner-core (docs/projects/oke-security-scanner-package-split.md), where
+# there used to be one standing in for all three CronJobs' image. Each of the three
 # CronJob Components in docker-apps' own catalog-info.yaml should
 # dependsOn its own library here, not all three on this one -- that edge
 # lives in docker-apps' descriptor, updated separately.
@@ -41,8 +42,8 @@ metadata:
   name: oke-scan
   description: >-
     Discovers all images actually deployed in OKE and scans each with Trivy, reporting
-    over OpenTelemetry. Just the scan package (packages/scan/); cleanup and
-    secret-age-tracking are their own libraries below.
+    over OpenTelemetry. Just the scan package (packages/scan/); cleanup,
+    secret-age-tracking and the JWKS publisher are their own libraries below.
   annotations:
     backstage.io/techdocs-ref: dir:.
   # `library` rather than `service`, changed once the CronJob Components in docker-apps
@@ -73,7 +74,8 @@ kind: Component
 metadata:
   name: oke-scanner-core
   description: >-
-    Shared code underneath all three of this repo's other libraries: k8s in-cluster/
+    Shared code underneath the three of this repo's libraries that use it (the JWKS
+    publisher stands alone): k8s in-cluster/
     kubeconfig-fallback auth, image discovery (KubernetesClient, the Image dataclass),
     and the low-level Discord webhook client. Never deployed or built into an image on
     its own -- packages/core, installed alongside whichever package actually ships.
@@ -122,3 +124,25 @@ spec:
     - component:default/oke-scanner-core
   consumesApis:
     - api:default/image-bump
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: jwks-publisher
+  description: >-
+    Mirrors the cluster's ServiceAccount public key set into the public Object Storage
+    object that OCI Identity Domains fetches on every token exchange, because the API
+    server is private (tnoff/terraform#191). Its own package (packages/jwks_publisher/)
+    and its own image; stands alone, with no oke-scanner-core, kubernetes client or
+    OpenTelemetry (plain stdout logging). Refuses any key carrying private material and
+    can only overwrite the one object it was seeded with. See the README's "JWKS
+    publisher" section.
+spec:
+  type: library
+  # experimental until the image is pushed and the CronJob runs in docker-apps; the
+  # consumesApis edge to image-bump is added with the release job that triggers it.
+  owner: group:default/admin
+  lifecycle: experimental
+  dependsOn:
+    # Creates the bucket, the seeded object and the bot this job writes as.
+    - component:default/terraform

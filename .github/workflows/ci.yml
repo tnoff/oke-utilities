@@ -100,6 +100,7 @@ jobs:
       image: ${{ steps.filter.outputs.image }}
       secret_age_image: ${{ steps.filter.outputs.secret_age_image }}
       ocir_cleanup_image: ${{ steps.filter.outputs.ocir_cleanup_image }}
+      jwks_publisher_image: ${{ steps.filter.outputs.jwks_publisher_image }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -122,6 +123,7 @@ jobs:
           IMAGE=false
           SECRET_AGE_IMAGE=false
           OCIR_CLEANUP_IMAGE=false
+          JWKS_PUBLISHER_IMAGE=false
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             case "$f" in
@@ -133,13 +135,19 @@ jobs:
             case "$f" in
               packages/core/*|packages/ocir_cleanup/*) OCIR_CLEANUP_IMAGE=true ;;
             esac
+            # No packages/core here: the publisher does not depend on it.
+            case "$f" in
+              packages/jwks_publisher/*) JWKS_PUBLISHER_IMAGE=true ;;
+            esac
           done <<< "${FILES}"
           echo "image inputs changed: ${IMAGE}"
           echo "secret-age image inputs changed: ${SECRET_AGE_IMAGE}"
           echo "ocir-cleanup image inputs changed: ${OCIR_CLEANUP_IMAGE}"
+          echo "jwks-publisher image inputs changed: ${JWKS_PUBLISHER_IMAGE}"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "secret_age_image=${SECRET_AGE_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "ocir_cleanup_image=${OCIR_CLEANUP_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "jwks_publisher_image=${JWKS_PUBLISHER_IMAGE}" >> "$GITHUB_OUTPUT"
 
   # GitLab ran the build and the image scan as two jobs, shipping the image
   # between them as a tarball through an object-storage bucket.
@@ -171,6 +179,14 @@ jobs:
     uses: tnoff/github-workflows/.github/workflows/docker-build-check.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # docker-build-check-v1.0.0
     with:
       dockerfile: packages/ocir_cleanup/Dockerfile
+
+  build-jwks-publisher:
+    name: Build and scan jwks-publisher image
+    needs: changes
+    if: needs.changes.outputs.jwks_publisher_image == 'true'
+    uses: tnoff/github-workflows/.github/workflows/docker-build-check.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # docker-build-check-v1.0.0
+    with:
+      dockerfile: packages/jwks_publisher/Dockerfile
 
   bump-version:
     name: Bump version
@@ -219,7 +235,7 @@ jobs:
     # This job always runs and its name never changes, so the ruleset requires
     # exactly one context and the jobs underneath stay free to change.
     if: always()
-    needs: [secrets, tox, changes, build, build-secret-age, build-ocir-cleanup, contracts, metadata]
+    needs: [secrets, tox, changes, build, build-secret-age, build-ocir-cleanup, build-jwks-publisher, contracts, metadata]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -233,6 +249,7 @@ jobs:
           echo "build:              ${{ needs.build.result }}"
           echo "build-secret-age:   ${{ needs['build-secret-age'].result }}"
           echo "build-ocir-cleanup: ${{ needs['build-ocir-cleanup'].result }}"
+          echo "build-jwks-publisher: ${{ needs['build-jwks-publisher'].result }}"
           echo "contracts:          ${{ needs.contracts.result }}"
 
       - name: Fail if any job failed
@@ -245,6 +262,7 @@ jobs:
           needs.build.result == 'failure' || needs.build.result == 'cancelled' ||
           needs['build-secret-age'].result == 'failure' || needs['build-secret-age'].result == 'cancelled' ||
           needs['build-ocir-cleanup'].result == 'failure' || needs['build-ocir-cleanup'].result == 'cancelled' ||
+          needs['build-jwks-publisher'].result == 'failure' || needs['build-jwks-publisher'].result == 'cancelled' ||
           needs.contracts.result == 'failure' || needs.contracts.result == 'cancelled' ||
           needs.metadata.result == 'failure' || needs.metadata.result == 'cancelled'
         run: |

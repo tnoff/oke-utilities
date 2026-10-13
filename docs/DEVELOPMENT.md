@@ -19,7 +19,7 @@ pip install -e ".[dev]" -e packages/core[telemetry] -e packages/scan
 To also work on cleanup or secret-age-tracker:
 
 ```bash
-pip install -e packages/ocir_cleanup -e packages/secret_age
+pip install -e packages/ocir_cleanup -e packages/secret_age -e packages/jwks_publisher
 ```
 
 ## Running tests
@@ -54,4 +54,5 @@ export KUBECONFIG=~/.kube/config
 python -m scan             # scanner
 python -m ocir_cleanup     # OCIR cleanup (pip install -e packages/ocir_cleanup first)
 python -m secret_age       # secret-age tracker (pip install -e packages/secret_age first)
+python -m jwks_publisher   # JWKS publisher (pip install -e packages/jwks_publisher first; set JWKS_BUCKET, DRY_RUN=true to preview)
 ```
