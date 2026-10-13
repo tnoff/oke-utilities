@@ -1,9 +1,10 @@
 # OKE Utilities
 
-Three independent CronJob packages/images for the OKE cluster, sharing one
+Four independent CronJob packages/images for the OKE cluster. Three share one
 library: image vulnerability scanning (`oke-scan`, with OpenTelemetry
 observability), OCIR tag/manifest cleanup (`ocir-cleanup`), and secret-age
-tracking (`secret-age-tracker`). The deployed manifests, schedules and
+tracking (`secret-age-tracker`). The fourth, the JWKS publisher
+(`jwks-publisher`), stands alone. The deployed manifests, schedules and
 operations live in `tnoff/docker-apps` (`apps/security-scanner/`, with a
 TechDocs site at `techdocs/oke-utilities`); this repo holds the code and images.
 
@@ -16,8 +17,9 @@ TechDocs site at `techdocs/oke-utilities`); this repo holds the code and images.
 | Orphan Manifest Cleanup | Yes | Same package/image as OCIR Image Cleanup. Detects and removes `unknown@sha256:...` platform manifests in OCIR whose digest is no longer referenced by any tagged manifest list. |
 | Cache Management | No | Security Scanner only. Automatic cleanup of Trivy image cache after each scan to minimize disk usage. |
 | Secret-age Tracker | Yes | Its own package/image (`packages/secret_age/`, `python -m secret_age`). Reports credential ages across OCI IAM credentials, Kubernetes Secrets (by the `secret-age-tracker.tnoff/last-rotated` annotation, falling back to `creationTimestamp`), and operator-tracked admin tfvars (a ledger ConfigMap). See [Secret-age tracker](#secret-age-tracker). |
+| JWKS publisher | Yes | Its own package/image (`packages/jwks_publisher/`, `python -m jwks_publisher`). Mirrors the cluster's ServiceAccount public key set into the Object Storage object that OCI Identity Domains fetches on every token exchange. See [JWKS publisher](#jwks-publisher). |
 
-All three share `packages/core/` (`oke-scanner-core`: image discovery, k8s
+The scanner, cleanup and secret-age tracker share `packages/core/` (`oke-scanner-core`: image discovery, k8s
 auth, the Discord webhook client, and, for the scanner and cleanup, which run
 with OpenTelemetry, the OTel setup/teardown helpers behind a `[telemetry]`
 extra).
@@ -45,6 +47,7 @@ Or use the docker build (one per image):
 $ docker build -f packages/scan/Dockerfile .            # security scanner
 $ docker build -f packages/ocir_cleanup/Dockerfile .    # OCIR cleanup
 $ docker build -f packages/secret_age/Dockerfile .      # secret-age tracker
+$ docker build -f packages/jwks_publisher/Dockerfile .  # JWKS publisher
 ```
 
 ### Running in Kubernetes
@@ -181,6 +184,44 @@ Discord as monospace tables plus a CSV. OCI IAM findings carry no rotation
 command on purpose: those credentials are mostly terraform-managed, and rotating
 them out of band would cause state drift (see the secret-rotation runbook in
 `tnoff/terraform-admin`).
+
+## JWKS publisher
+
+Part of federating in-cluster workloads to OCI with ServiceAccount tokens
+(tnoff/terraform#191). OCI Identity Domains verifies a workload's token against
+the cluster's public key set, but the API server is private, so the set is
+hosted in a public bucket. Each run reads the live set from the API server with
+the pod's own ServiceAccount and overwrites the hosted object if it differs.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `JWKS_BUCKET` | Yes | | Bucket holding the hosted key set (terraform `oci/`: `k8s_oidc_jwks`) |
+| `JWKS_OBJECT` | No | `jwks.json` | Object to overwrite |
+| `JWKS_URL` | No | `https://kubernetes.default.svc/openid/v1/jwks` | Live key set |
+| `SERVICE_ACCOUNT_DIR` | No | `/var/run/secrets/kubernetes.io/serviceaccount` | Where `token` and `ca.crt` are read from |
+| `OCI_CONFIG_FILE` / `OCI_PROFILE` | No | `~/.oci/config` / `DEFAULT` | The publisher bot's OCI config (its API key) |
+| `REQUEST_TIMEOUT` | No | `15` | Seconds for the API server call |
+| `DRY_RUN` | No | `false` | Log what would change, write nothing |
+
+Safety rules, all enforced before anything is written:
+
+- The live set must parse and contain at least one RSA RS256 signing key with a
+  `kid`, `n` and `e`. Anything else is a failed run and the hosted copy is left
+  alone.
+- A key carrying any private member (`d`, `p`, `q`, `dp`, `dq`, `qi`, `oth`,
+  `k`) is refused, never stripped. The hosted file is world readable.
+- The write is conditional on the ETag read a moment earlier (`if_match`), so a
+  concurrent change fails the run instead of being overwritten; the next run
+  retries. A read-back confirms the write.
+- The bot's IAM policy is `use objects` on that one bucket: it can overwrite but
+  not create or delete, so terraform seeds the object and a missing object is an
+  error, not something the publisher repairs.
+- Every change logs the key ids added, removed and kept, which is the audit
+  trail for an OKE key rotation.
+
+Exit code 0 means the hosted set is current (or was just updated); 1 means it
+could not be confirmed current. There is no OpenTelemetry: the CronJob's failure
+is the signal.
 
 ## Scoping a cleanup run
 

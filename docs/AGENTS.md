@@ -12,6 +12,15 @@ oke-utilities/
 │   │                     # packages/images. None carries its own dev-tool versions or pylint
 │   │                     # config; root pyproject.toml is the single source
 │   │                     # for both (see Code Quality below).
+│   ├── jwks_publisher/   # jwks-publisher: own package, own Dockerfile, own CronJob +
+│   │   │                 # entry point (`python -m jwks_publisher`). Does NOT depend on
+│   │   │                 # packages/core, kubernetes or OpenTelemetry: stdlib for the API
+│   │   │                 # server call, the OCI SDK for the one Object Storage object.
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   ├── src/jwks_publisher/
+│   │   │   ├── main.py, __main__.py, config.py, jwks.py, hosted.py
+│   │   └── tests/       # helpers.py holds the key-set builders (tests/ has no __init__.py)
 │   ├── core/             # oke-scanner-core: shared by scan/secret_age/ocir_cleanup.
 │   │   └── src/oke_scanner_core/
 │   │       ├── k8s_auth.py        # load_k8s_config(): incluster, falls back to kubeconfig
@@ -170,6 +179,9 @@ Each package keeps only the report-shape method(s) it needs, both wrapping `oke_
 
 All values passed to `add_row` should be strings. Each paginated page is sent as a separate webhook POST with a 1-second sleep between requests to respect rate limits (in `DiscordWebhookClient`, not per-package).
 
+### `packages/jwks_publisher/`
+`main.run(cfg, hosted=None)` mirrors the live ServiceAccount key set into one world-readable object (tnoff/terraform#191). Order matters and each step is a guard: `jwks.fetch_live_jwks` (https only, pod ServiceAccount token) then `jwks.canonicalize` (must be a non-empty set of RSA RS256 signing keys with `kid`/`n`/`e`; any key with a private member is **refused, not stripped**; canonical form sorts by `kid` so ordering and whitespace never cause a write) then `HostedJwks.read` then compare, and only then `HostedJwks.write` with `if_match=<etag>` and a read-back. Any failure before the write leaves the hosted copy untouched and exits 1. The bot's policy is `use objects` (overwrite, no create/delete), so a missing object is an error by design -- terraform seeds it. The empty seed `{"keys":[]}` fails validation on purpose and is replaced on the first run. Do not weaken the private-member check, do not add `create`/`delete` paths, and do not add retries around `write`: a 412 means someone else changed the object and the next run should look at it afresh. Logs only (no OTel), by design.
+
 ### `packages/secret_age/`
 `main()` runs three readers (`readers/oci_iam.py`, `readers/k8s.py`, `readers/layer1_ledger.py`), each in its own `try/except` so one failing source never blocks the report; `aggregator.aggregate()` buckets `Finding`s into rotate/warn/unknown/ok (oldest first); `discord_report.send_report()` posts tables plus a full CSV. Thresholds: `SECRET_AGE_WARN_DAYS=90`, `SECRET_AGE_ROTATE_DAYS=180`. See the README's "Secret-age tracker" section for the annotation contract (`secret-age-tracker.tnoff/last-rotated`, `unknown` sentinel, `expires-at`). Notes:
 
@@ -183,8 +195,9 @@ All values passed to `add_row` should be strings. Each paginated page is sent as
 One `Dockerfile` per package at `packages/<name>/Dockerfile`, all built from
 repo-root context (so each can `COPY packages/core`). Only `packages/scan/Dockerfile`
 has a Trivy stage; `secret_age` has no OpenTelemetry deps, `ocir_cleanup` does.
-Images are `iad.ocir.io/tnoff/oke-scan`, `.../ocir_cleanup` and
-`.../secret_age_tracker`. This section covers `packages/scan/Dockerfile`:
+Images are `iad.ocir.io/tnoff/oke-scan`, `.../ocir_cleanup`, `.../secret_age_tracker`
+and `.../jwks_publisher` (CI builds and scans the last; its push to OCIR and docker-apps
+bump are not wired into `release.yml` yet, they need the OCIR repo and pusher entry first). This section covers `packages/scan/Dockerfile`:
 
 1. `trivy-builder` — `python:3.14-slim` + `curl` + `ca-certificates`, runs the official Trivy install script and drops the pinned `trivy` binary in `/usr/local/bin/`. Version pinned via `ARG TRIVY_VERSION`.
 2. `py-builder` — `python:3.14-slim`, `pip install --prefix=/install ./packages/core ./packages/scan`.
