@@ -196,8 +196,8 @@ One `Dockerfile` per package at `packages/<name>/Dockerfile`, all built from
 repo-root context (so each can `COPY packages/core`). Only `packages/scan/Dockerfile`
 has a Trivy stage; `secret_age` has no OpenTelemetry deps, `ocir_cleanup` does.
 Images are `iad.ocir.io/tnoff/oke-scan`, `.../ocir_cleanup`, `.../secret_age_tracker`
-and `.../jwks_publisher` (CI builds and scans the last; its push to OCIR and docker-apps
-bump are not wired into `release.yml` yet, they need the OCIR repo and pusher entry first). This section covers `packages/scan/Dockerfile`:
+and `.../jwks_publisher` (CI builds and scans all four; `release.yml` pushes the last, with no
+docker-apps bump job until its pin exists in `images/kustomization.yaml`). This section covers `packages/scan/Dockerfile`:
 
 1. `trivy-builder` — `python:3.14-slim` + `curl` + `ca-certificates`, runs the official Trivy install script and drops the pinned `trivy` binary in `/usr/local/bin/`. Version pinned via `ARG TRIVY_VERSION`.
 2. `py-builder` — `python:3.14-slim`, `pip install --prefix=/install ./packages/core ./packages/scan`.

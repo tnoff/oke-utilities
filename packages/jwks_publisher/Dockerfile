@@ -29,4 +29,7 @@ USER publisher
 
 ENV PYTHONUNBUFFERED=1
 
+LABEL org.opencontainers.image.source="https://github.com/tnoff/oke-utilities" \
+      org.opencontainers.image.description="Mirrors the cluster's ServiceAccount public key set into the hosted OCI bucket (tnoff/terraform#191)"
+
 CMD ["python", "-m", "jwks_publisher"]
