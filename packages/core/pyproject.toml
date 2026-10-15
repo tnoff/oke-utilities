@@ -7,7 +7,7 @@ name = "oke-scanner-core"
 version = "0.3.0"
 requires-python = ">=3.11"
 dependencies = [
-    "kubernetes==36.0.3",
+    "kubernetes==37.0.0",
     "requests",
 ]
 
