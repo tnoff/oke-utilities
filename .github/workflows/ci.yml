@@ -80,7 +80,7 @@ jobs:
     name: Tox
     needs: metadata
     if: needs.metadata.outputs.only != 'true'
-    uses: tnoff/github-workflows/.github/workflows/tox.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # tox-v1.0.0
+    uses: tnoff/github-workflows/.github/workflows/tox.yml@fd3bbf52e18c2edfa3d6fe015bed6f7056cfa777  # tox-v1.0.2
 
   # Reimplements .image-build-rules' `changes:` block: only rebuild when
   # something baked into the image changed. Doc-only, renovate.json and
