@@ -3,7 +3,7 @@
 # CronJob never scans images and has no OTLP setup at all (plain stdout
 # logging only). Build context is the repo root so this stage can also
 # COPY packages/core.
-FROM python:3.14-slim AS py-builder
+FROM python:3.15-slim AS py-builder
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential && \
@@ -17,7 +17,7 @@ COPY packages/secret_age/src packages/secret_age/src
 RUN pip install --no-cache-dir --prefix=/install ./packages/core ./packages/secret_age
 
 
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 RUN apt-get update && \
     apt-get -y upgrade && \

@@ -2,7 +2,7 @@
 # from the API server with the standard library and writes one Object Storage
 # object. No kubernetes client, no oke-scanner-core, no OpenTelemetry, no Trivy.
 # Build context is the repo root, like the other images.
-FROM python:3.14-slim AS py-builder
+FROM python:3.15-slim AS py-builder
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential && \
@@ -14,7 +14,7 @@ COPY packages/jwks_publisher/src packages/jwks_publisher/src
 RUN pip install --no-cache-dir --prefix=/install ./packages/jwks_publisher
 
 
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 RUN apt-get update && \
     apt-get -y upgrade && \

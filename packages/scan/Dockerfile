@@ -1,4 +1,4 @@
-FROM python:3.14-slim AS trivy-builder
+FROM python:3.15-slim AS trivy-builder
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates && \
@@ -13,7 +13,7 @@ RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/
 # reason build-essential existed in this stage) moved out with
 # packages/ocir_cleanup, and scan no longer depends on the OCI SDK at all.
 # Build context is the repo root so this stage can also COPY packages/core.
-FROM python:3.14-slim AS py-builder
+FROM python:3.15-slim AS py-builder
 
 WORKDIR /build
 COPY packages/core/pyproject.toml packages/core/pyproject.toml
@@ -23,7 +23,7 @@ COPY packages/scan/src packages/scan/src
 RUN pip install --no-cache-dir --prefix=/install ./packages/core ./packages/scan
 
 
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 # Apply security upgrades only; no build tools needed in the final image.
 RUN apt-get update && \

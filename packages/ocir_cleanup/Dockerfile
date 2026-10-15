@@ -4,7 +4,7 @@
 # secret-age-tracker). No Trivy binary at all -- this image never scans an
 # image. Build context is the repo root so this stage can also COPY
 # packages/core.
-FROM python:3.14-slim AS py-builder
+FROM python:3.15-slim AS py-builder
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential && \
@@ -18,7 +18,7 @@ COPY packages/ocir_cleanup/src packages/ocir_cleanup/src
 RUN pip install --no-cache-dir --prefix=/install ./packages/core ./packages/ocir_cleanup
 
 
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 RUN apt-get update && \
     apt-get -y upgrade && \
