@@ -21,6 +21,14 @@ oke-utilities/
 │   │   ├── src/jwks_publisher/
 │   │   │   ├── main.py, __main__.py, config.py, jwks.py, hosted.py
 │   │   └── tests/       # helpers.py holds the key-set builders (tests/ has no __init__.py)
+│   ├── rpst_sidecar/     # rpst-sidecar: own package, own Dockerfile, runs as a native
+│   │   │                 # sidecar (`python -m rpst_sidecar`; `--check` is the exec probe).
+│   │   │                 # Stands alone: only `cryptography`, urllib for HTTP (no OCI SDK).
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   ├── src/rpst_sidecar/
+│   │   │   ├── main.py, __main__.py, config.py, exchange.py
+│   │   └── tests/       # helpers.py holds the JWT/response builders (tests/ has no __init__.py)
 │   ├── core/             # oke-scanner-core: shared by scan/secret_age/ocir_cleanup.
 │   │   └── src/oke_scanner_core/
 │   │       ├── k8s_auth.py        # load_k8s_config(): incluster, falls back to kubeconfig
@@ -179,6 +187,9 @@ Each package keeps only the report-shape method(s) it needs, both wrapping `oke_
 
 All values passed to `add_row` should be strings. Each paginated page is sent as a separate webhook POST with a 1-second sleep between requests to respect rate limits (in `DiscordWebhookClient`, not per-package).
 
+### `packages/rpst_sidecar/`
+`main.Sidecar.refresh_once()` is one exchange (testable on its own); `Sidecar.run(stop)` only sleeps (`threading.Event.wait`) and retries. The RSA-2048 key is generated once per process and reused for every exchange, so `private.pem` is written once, before the first `rpst`, and a reader never sees a token/key mismatch. Both files are written atomically (temp file, fsync, `os.replace`) with mode 0640; `rpst` has NO trailing newline (the OCI SDK fails with "Invalid crypto padding" otherwise). `exchange.exchange()` re-reads `client_id`/`client_secret` and the SA token on every call, POSTs the token-exchange form to `{RPST_DOMAIN_URL}/oauth2/v1/token` through the single `exchange.urlopen` wrapper (the seam tests patch), and raises `ExchangeError` (messages redacted of secrets, body capped at 200 chars). Failures never exit: exponential backoff with jitter, 2s doubling to a 120s cap, forever. Next refresh = `REFRESH_FRACTION` x (RPST `exp` - `iat`), falling back to `RPST_EXP_MINUTES`. JWT payloads are decoded without verifying signatures, for scheduling and the audit log line only. `--check` exits 1 unless `rpst` and `private.pem` exist and `exp` is more than 60s away.
+
 ### `packages/jwks_publisher/`
 `main.run(cfg, hosted=None)` mirrors the live ServiceAccount key set into one world-readable object (tnoff/terraform#191). Order matters and each step is a guard: `jwks.fetch_live_jwks` (https only, pod ServiceAccount token) then `jwks.canonicalize` (must be a non-empty set of RSA RS256 signing keys with `kid`/`n`/`e`; any key with a private member is **refused, not stripped**; canonical form sorts by `kid` so ordering and whitespace never cause a write) then `HostedJwks.read` then compare, and only then `HostedJwks.write` with `if_match=<etag>` and a read-back. Any failure before the write leaves the hosted copy untouched and exits 1. The bot's policy is `use objects` (overwrite, no create/delete), so a missing object is an error by design -- terraform seeds it. The empty seed `{"keys":[]}` fails validation on purpose and is replaced on the first run. Do not weaken the private-member check, do not add `create`/`delete` paths, and do not add retries around `write`: a 412 means someone else changed the object and the next run should look at it afresh. Logs only (no OTel), by design.
 
@@ -196,8 +207,8 @@ One `Dockerfile` per package at `packages/<name>/Dockerfile`, all built from
 repo-root context (so each can `COPY packages/core`). Only `packages/scan/Dockerfile`
 has a Trivy stage; `secret_age` has no OpenTelemetry deps, `ocir_cleanup` does.
 Images are `iad.ocir.io/tnoff/oke-scan`, `.../ocir_cleanup`, `.../secret_age_tracker`
-and `.../jwks_publisher` (CI builds and scans all four; `release.yml` pushes the last, with no
-docker-apps bump job until its pin exists in `images/kustomization.yaml`). This section covers `packages/scan/Dockerfile`:
+`.../jwks_publisher` and `.../rpst_sidecar` (CI builds and scans all five; `release.yml` pushes the last two, with no
+docker-apps bump job until their pins exist in `images/kustomization.yaml`). This section covers `packages/scan/Dockerfile`:
 
 1. `trivy-builder` — `python:3.14-slim` + `curl` + `ca-certificates`, runs the official Trivy install script and drops the pinned `trivy` binary in `/usr/local/bin/`. Version pinned via `ARG TRIVY_VERSION`.
 2. `py-builder` — `python:3.14-slim`, `pip install --prefix=/install ./packages/core ./packages/scan`.

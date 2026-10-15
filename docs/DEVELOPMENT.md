@@ -16,10 +16,10 @@ Scan, cleanup and secret-age-tracker are separate installable packages (see
 pip install -e ".[dev]" -e packages/core[telemetry] -e packages/scan
 ```
 
-To also work on cleanup or secret-age-tracker:
+To also work on cleanup, secret-age-tracker, the JWKS publisher or the RPST sidecar:
 
 ```bash
-pip install -e packages/ocir_cleanup -e packages/secret_age -e packages/jwks_publisher
+pip install -e packages/ocir_cleanup -e packages/secret_age -e packages/jwks_publisher -e packages/rpst_sidecar
 ```
 
 ## Running tests
@@ -55,4 +55,6 @@ python -m scan             # scanner
 python -m ocir_cleanup     # OCIR cleanup (pip install -e packages/ocir_cleanup first)
 python -m secret_age       # secret-age tracker (pip install -e packages/secret_age first)
 python -m jwks_publisher   # JWKS publisher (pip install -e packages/jwks_publisher first; set JWKS_BUCKET, DRY_RUN=true to preview)
+python -m rpst_sidecar     # RPST sidecar (pip install -e packages/rpst_sidecar first; set RPST_DOMAIN_URL, point RPST_CLIENT_DIR / SERVICE_ACCOUNT_TOKEN_FILE / OUTPUT_DIR at local files)
+python -m rpst_sidecar --check  # exit 0 only if OUTPUT_DIR holds a fresh rpst and private.pem
 ```

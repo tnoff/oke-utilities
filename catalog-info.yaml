@@ -8,8 +8,8 @@
 # / grafana selectors still assert targets that don't exist yet, so they stay
 # out until those plugins are wired up.
 #
-# Five library Components now: one per real deployable (oke-scan,
-# secret-age-tracker, ocir-cleanup, jwks-publisher) plus the shared
+# Six library Components now: one per real deployable (oke-scan,
+# secret-age-tracker, ocir-cleanup, jwks-publisher, rpst-sidecar) plus the shared
 # oke-scanner-core (docs/projects/oke-security-scanner-package-split.md), where
 # there used to be one standing in for all three CronJobs' image. Each of the three
 # CronJob Components in docker-apps' own catalog-info.yaml should
@@ -43,7 +43,7 @@ metadata:
   description: >-
     Discovers all images actually deployed in OKE and scans each with Trivy, reporting
     over OpenTelemetry. Just the scan package (packages/scan/); cleanup,
-    secret-age-tracking and the JWKS publisher are their own libraries below.
+    secret-age-tracking, the JWKS publisher and the RPST sidecar are their own libraries below.
   annotations:
     backstage.io/techdocs-ref: dir:.
   # `library` rather than `service`, changed once the CronJob Components in docker-apps
@@ -75,7 +75,7 @@ metadata:
   name: oke-scanner-core
   description: >-
     Shared code underneath the three of this repo's libraries that use it (the JWKS
-    publisher stands alone): k8s in-cluster/
+    publisher and RPST sidecar stand alone): k8s in-cluster/
     kubeconfig-fallback auth, image discovery (KubernetesClient, the Image dataclass),
     and the low-level Discord webhook client. Never deployed or built into an image on
     its own -- packages/core, installed alongside whichever package actually ships.
@@ -145,4 +145,25 @@ spec:
   lifecycle: experimental
   dependsOn:
     # Creates the bucket, the seeded object and the bot this job writes as.
+    - component:default/terraform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: rpst-sidecar
+  description: >-
+    Sidecar container that trades a pod's projected ServiceAccount token for an OCI
+    resource principal session token (RPST) on a loop and writes it, with its private
+    key, to a shared in-memory volume, so the main container can sign OCI SDK calls
+    without a stored API key (tnoff/terraform#191). Its own package (packages/rpst_sidecar/)
+    and its own image; stands alone, with only `cryptography` as a dependency (urllib for
+    HTTP, no OCI SDK). See the README's "RPST sidecar" section.
+spec:
+  type: library
+  # experimental until the image is pushed and a workload runs it from docker-apps; the
+  # consumesApis edge to image-bump is added with the release job that triggers it.
+  owner: group:default/admin
+  lifecycle: experimental
+  dependsOn:
+    # Creates the identity domain, the token-exchange app and the policies this trades against.
     - component:default/terraform

@@ -1,10 +1,10 @@
 # OKE Utilities
 
-Four independent CronJob packages/images for the OKE cluster. Three share one
+Five independent packages/images for the OKE cluster. Three CronJobs share one
 library: image vulnerability scanning (`oke-scan`, with OpenTelemetry
 observability), OCIR tag/manifest cleanup (`ocir-cleanup`), and secret-age
-tracking (`secret-age-tracker`). The fourth, the JWKS publisher
-(`jwks-publisher`), stands alone. The deployed manifests, schedules and
+tracking (`secret-age-tracker`). The JWKS publisher
+(`jwks-publisher`) and the RPST sidecar (`rpst-sidecar`, a sidecar container rather than a CronJob) stand alone. The deployed manifests, schedules and
 operations live in `tnoff/docker-apps` (`apps/security-scanner/`, with a
 TechDocs site at `techdocs/oke-utilities`); this repo holds the code and images.
 
@@ -18,6 +18,7 @@ TechDocs site at `techdocs/oke-utilities`); this repo holds the code and images.
 | Cache Management | No | Security Scanner only. Automatic cleanup of Trivy image cache after each scan to minimize disk usage. |
 | Secret-age Tracker | Yes | Its own package/image (`packages/secret_age/`, `python -m secret_age`). Reports credential ages across OCI IAM credentials, Kubernetes Secrets (by the `secret-age-tracker.tnoff/last-rotated` annotation, falling back to `creationTimestamp`), and operator-tracked admin tfvars (a ledger ConfigMap). See [Secret-age tracker](#secret-age-tracker). |
 | JWKS publisher | Yes | Its own package/image (`packages/jwks_publisher/`, `python -m jwks_publisher`). Mirrors the cluster's ServiceAccount public key set into the Object Storage object that OCI Identity Domains fetches on every token exchange. See [JWKS publisher](#jwks-publisher). |
+| RPST sidecar | No | Its own package/image (`packages/rpst_sidecar/`, `python -m rpst_sidecar`). A sidecar that trades the pod's projected ServiceAccount token for an OCI resource principal session token on a loop, so the main container needs no stored API key. See the "RPST sidecar" section. |
 
 The scanner, cleanup and secret-age tracker share `packages/core/` (`oke-scanner-core`: image discovery, k8s
 auth, the Discord webhook client, and, for the scanner and cleanup, which run
@@ -48,6 +49,7 @@ $ docker build -f packages/scan/Dockerfile .            # security scanner
 $ docker build -f packages/ocir_cleanup/Dockerfile .    # OCIR cleanup
 $ docker build -f packages/secret_age/Dockerfile .      # secret-age tracker
 $ docker build -f packages/jwks_publisher/Dockerfile .  # JWKS publisher
+$ docker build -f packages/rpst_sidecar/Dockerfile .    # RPST sidecar
 ```
 
 ### Running in Kubernetes
@@ -222,6 +224,107 @@ Safety rules, all enforced before anything is written:
 Exit code 0 means the hosted set is current (or was just updated); 1 means it
 could not be confirmed current. There is no OpenTelemetry: the CronJob's failure
 is the signal.
+
+## RPST sidecar
+
+Part of federating in-cluster workloads to OCI with ServiceAccount tokens
+(tnoff/terraform#191). The sidecar trades the pod's projected ServiceAccount
+token for an OCI resource principal session token (RPST) at the identity
+domain's token endpoint, writes it and its private key to a shared in-memory
+volume, and repeats before it expires. The main container then signs OCI SDK
+calls with no stored API key. Only `cryptography` is installed: HTTP is urllib,
+and there is no OCI SDK in the image.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `RPST_DOMAIN_URL` | Yes | | Identity domain endpoint, e.g. `https://idcs-xxxx.identity.oraclecloud.com:443`. Must be `https` |
+| `RPST_CLIENT_DIR` | No | `/var/run/rpst/client` | Directory with files `client_id` and `client_secret` (the exchange app's credentials). Re-read on every exchange; trailing whitespace is stripped |
+| `SERVICE_ACCOUNT_TOKEN_FILE` | No | `/var/run/secrets/tokens/oci/token` | Projected ServiceAccount token, audience = `RPST_DOMAIN_URL`. Re-read on every exchange |
+| `OUTPUT_DIR` | No | `/var/run/rpst/out` | Shared memory-backed volume that receives the files below |
+| `RPST_EXP_MINUTES` | No | `180` | Requested RPST lifetime, integer 15..720 |
+| `REFRESH_FRACTION` | No | `0.5` | Refresh once this fraction (0 < x < 1) of the token's real lifetime (its `exp` minus `iat`) has passed; falls back to `RPST_EXP_MINUTES` if the claims are missing |
+| `POD_NAME`, `POD_NAMESPACE`, `SERVICE_ACCOUNT_NAME` | No | `unknown` | Downward API values, used only in the audit log line |
+
+Files written to `OUTPUT_DIR`, mode `0640`, each atomically (temp file in the
+same directory, fsync, rename):
+
+- `private.pem`: the unencrypted PKCS8 PEM private key. One RSA-2048 key is
+  generated at process start and reused for every exchange, so this file is
+  written once, before the first token, and never changes while the pod lives.
+  The key exists only in memory and on the memory-backed volume.
+- `rpst`: the token, with no trailing newline (the OCI SDK fails with "Invalid
+  crypto padding" otherwise).
+
+Failures never stop the sidecar: each exchange failure logs a WARNING with the
+HTTP status and the first 200 characters of the error body (never the client
+secret, ServiceAccount token or RPST) and retries with exponential backoff and
+jitter, 2s doubling to a 120s cap. This includes startup: exchanges can fail
+for around ten minutes after policy or IAM changes. Every successful exchange
+logs one audit line (`jti`, the ServiceAccount token's `sub`, namespace, pod,
+service account, issued and expires in UTC, lifetime in minutes). SIGTERM and
+SIGINT stop it cleanly with exit code 0.
+
+`python -m rpst_sidecar --check` starts no server: it exits 0 only if `rpst`
+and `private.pem` exist and the token has more than 60 seconds left, otherwise
+exits 1 with one line saying why.
+
+### Pod wiring
+
+- A projected `serviceAccountToken` volume with `audience` set to
+  `RPST_DOMAIN_URL` and `expirationSeconds: 600`, mounted at the directory of
+  `SERVICE_ACCOUNT_TOKEN_FILE`.
+- The exchange app's credentials as a Secret volume at `RPST_CLIENT_DIR`.
+- An `emptyDir` with `medium: Memory`, mounted at `OUTPUT_DIR` in the sidecar
+  and read-only in the main container.
+- `securityContext.fsGroup` on the pod so the main container can read the
+  `0640` files.
+- Run it as a native sidecar: an `initContainers` entry with
+  `restartPolicy: Always`, with `startupProbe` and `livenessProbe` exec probes
+  running `python -m rpst_sidecar --check`. The startup probe holds the main
+  container back until the first token exists; the liveness probe restarts a
+  sidecar that cannot refresh before the token expires.
+
+Sketch of the sidecar container:
+
+```yaml
+initContainers:
+  - name: rpst
+    image: iad.ocir.io/tnoff/rpst_sidecar:<tag>
+    restartPolicy: Always
+    env:
+      - {name: RPST_DOMAIN_URL, value: "https://idcs-xxxx.identity.oraclecloud.com:443"}
+      - {name: POD_NAME, valueFrom: {fieldRef: {fieldPath: metadata.name}}}
+      - {name: POD_NAMESPACE, valueFrom: {fieldRef: {fieldPath: metadata.namespace}}}
+      - {name: SERVICE_ACCOUNT_NAME, valueFrom: {fieldRef: {fieldPath: spec.serviceAccountName}}}
+    startupProbe:
+      exec: {command: [python, -m, rpst_sidecar, --check]}
+      periodSeconds: 5
+      failureThreshold: 120
+    livenessProbe:
+      exec: {command: [python, -m, rpst_sidecar, --check]}
+      periodSeconds: 60
+volumes:
+  - name: rpst-out
+    emptyDir: {medium: Memory}
+  - name: oci-token
+    projected:
+      sources:
+        - serviceAccountToken: {audience: "https://idcs-xxxx.identity.oraclecloud.com:443", expirationSeconds: 600, path: token}
+```
+
+### Consuming it from the main container
+
+Mount the same `emptyDir` and set the OCI SDK's resource principal variables:
+
+```
+OCI_RESOURCE_PRINCIPAL_VERSION=2.2
+OCI_RESOURCE_PRINCIPAL_RPST=<dir>/rpst
+OCI_RESOURCE_PRINCIPAL_PRIVATE_PEM=<dir>/private.pem
+OCI_RESOURCE_PRINCIPAL_REGION=<region>
+```
+
+then `oci.auth.signers.get_resource_principals_signer()`. The SDK re-reads the
+token file, so refreshes are picked up without restarting the main container.
 
 ## Scoping a cleanup run
 
