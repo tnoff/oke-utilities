@@ -8,7 +8,7 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "oke-scanner-core",
-    "kubernetes==36.0.3",
+    "kubernetes==37.0.0",
     "oci==2.187.2",
     "requests",
     # dappertable is GitHub-canonical. The GitLab copy still resolves, but its
