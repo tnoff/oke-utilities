@@ -101,6 +101,7 @@ jobs:
       secret_age_image: ${{ steps.filter.outputs.secret_age_image }}
       ocir_cleanup_image: ${{ steps.filter.outputs.ocir_cleanup_image }}
       jwks_publisher_image: ${{ steps.filter.outputs.jwks_publisher_image }}
+      rpst_sidecar_image: ${{ steps.filter.outputs.rpst_sidecar_image }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -124,6 +125,7 @@ jobs:
           SECRET_AGE_IMAGE=false
           OCIR_CLEANUP_IMAGE=false
           JWKS_PUBLISHER_IMAGE=false
+          RPST_SIDECAR_IMAGE=false
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             case "$f" in
@@ -139,15 +141,21 @@ jobs:
             case "$f" in
               packages/jwks_publisher/*) JWKS_PUBLISHER_IMAGE=true ;;
             esac
+            # Likewise stands alone.
+            case "$f" in
+              packages/rpst_sidecar/*) RPST_SIDECAR_IMAGE=true ;;
+            esac
           done <<< "${FILES}"
           echo "image inputs changed: ${IMAGE}"
           echo "secret-age image inputs changed: ${SECRET_AGE_IMAGE}"
           echo "ocir-cleanup image inputs changed: ${OCIR_CLEANUP_IMAGE}"
           echo "jwks-publisher image inputs changed: ${JWKS_PUBLISHER_IMAGE}"
+          echo "rpst-sidecar image inputs changed: ${RPST_SIDECAR_IMAGE}"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "secret_age_image=${SECRET_AGE_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "ocir_cleanup_image=${OCIR_CLEANUP_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "jwks_publisher_image=${JWKS_PUBLISHER_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "rpst_sidecar_image=${RPST_SIDECAR_IMAGE}" >> "$GITHUB_OUTPUT"
 
   # GitLab ran the build and the image scan as two jobs, shipping the image
   # between them as a tarball through an object-storage bucket.
@@ -187,6 +195,14 @@ jobs:
     uses: tnoff/github-workflows/.github/workflows/docker-build-check.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # docker-build-check-v1.0.0
     with:
       dockerfile: packages/jwks_publisher/Dockerfile
+
+  build-rpst-sidecar:
+    name: Build and scan rpst-sidecar image
+    needs: changes
+    if: needs.changes.outputs.rpst_sidecar_image == 'true'
+    uses: tnoff/github-workflows/.github/workflows/docker-build-check.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # docker-build-check-v1.0.0
+    with:
+      dockerfile: packages/rpst_sidecar/Dockerfile
 
   bump-version:
     name: Bump version
@@ -235,7 +251,7 @@ jobs:
     # This job always runs and its name never changes, so the ruleset requires
     # exactly one context and the jobs underneath stay free to change.
     if: always()
-    needs: [secrets, tox, changes, build, build-secret-age, build-ocir-cleanup, build-jwks-publisher, contracts, metadata]
+    needs: [secrets, tox, changes, build, build-secret-age, build-ocir-cleanup, build-jwks-publisher, build-rpst-sidecar, contracts, metadata]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -250,6 +266,7 @@ jobs:
           echo "build-secret-age:   ${{ needs['build-secret-age'].result }}"
           echo "build-ocir-cleanup: ${{ needs['build-ocir-cleanup'].result }}"
           echo "build-jwks-publisher: ${{ needs['build-jwks-publisher'].result }}"
+          echo "build-rpst-sidecar: ${{ needs['build-rpst-sidecar'].result }}"
           echo "contracts:          ${{ needs.contracts.result }}"
 
       - name: Fail if any job failed
@@ -263,6 +280,7 @@ jobs:
           needs['build-secret-age'].result == 'failure' || needs['build-secret-age'].result == 'cancelled' ||
           needs['build-ocir-cleanup'].result == 'failure' || needs['build-ocir-cleanup'].result == 'cancelled' ||
           needs['build-jwks-publisher'].result == 'failure' || needs['build-jwks-publisher'].result == 'cancelled' ||
+          needs['build-rpst-sidecar'].result == 'failure' || needs['build-rpst-sidecar'].result == 'cancelled' ||
           needs.contracts.result == 'failure' || needs.contracts.result == 'cancelled' ||
           needs.metadata.result == 'failure' || needs.metadata.result == 'cancelled'
         run: |
