@@ -57,4 +57,5 @@ python -m secret_age       # secret-age tracker (pip install -e packages/secret_
 python -m jwks_publisher   # JWKS publisher (pip install -e packages/jwks_publisher first; set JWKS_BUCKET, DRY_RUN=true to preview)
 python -m rpst_sidecar     # RPST sidecar (pip install -e packages/rpst_sidecar first; set RPST_DOMAIN_URL, point RPST_CLIENT_DIR / SERVICE_ACCOUNT_TOKEN_FILE / OUTPUT_DIR at local files)
 python -m rpst_sidecar --check  # exit 0 only if OUTPUT_DIR holds a fresh rpst and private.pem
+python -m rpst_sidecar --once   # one exchange, exit 0/1 (canary)
 ```
