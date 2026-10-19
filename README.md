@@ -270,6 +270,11 @@ SIGINT stop it cleanly with exit code 0.
 and `private.pem` exist and the token has more than 60 seconds left, otherwise
 exits 1 with one line saying why.
 
+`python -m rpst_sidecar --once` does a single exchange and exits: 0 once an
+`rpst` is written, 1 if the exchange (or the write) fails, with no retries. It is
+a canary for the whole chain (ServiceAccount token, trust, JWKS fetch, exchange
+secret); run it from a CronJob and alert on the Job failing or going stale.
+
 ### Pod wiring
 
 - A projected `serviceAccountToken` volume with `audience` set to

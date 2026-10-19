@@ -174,6 +174,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     """Run the sidecar, or with --check, probe the files it wrote."""
     parser = argparse.ArgumentParser(prog="rpst_sidecar")
     parser.add_argument("--check", action="store_true", help="exit 0 only if a fresh RPST is on disk")
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="do one token exchange and exit 0 on success, 1 on failure (a canary for the whole chain)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -191,6 +196,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         problem = check(cfg)
         if problem:
             print(f"unhealthy: {problem}")
+            return 1
+        return 0
+
+    if args.once:
+        try:
+            Sidecar(cfg).refresh_once()
+        except (ExchangeError, OSError) as exc:
+            logger.error("RPST exchange failed: %s", exc)
             return 1
         return 0
 

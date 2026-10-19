@@ -359,6 +359,26 @@ def test_main_check_unhealthy_prints_one_line(env, capsys):
     assert out.startswith("unhealthy: ") and out.count("\n") == 1
 
 
+def test_main_once_succeeds_after_one_exchange(env, caplog):
+    with caplog.at_level(logging.INFO), patch_exchange(ok_response(rpst_for())) as urlopen:
+        assert m.main(["--once"]) == 0
+    assert urlopen.call_count == 1
+    assert "rpst issued" in caplog.text
+
+
+def test_main_once_fails_without_retrying(env, caplog):
+    with patch_exchange(http_error(401, "aud is missing or invalid")) as urlopen:
+        assert m.main(["--once"]) == 1
+    assert urlopen.call_count == 1
+    assert "RPST exchange failed" in caplog.text
+
+
+def test_main_once_fails_when_output_unwritable(env, caplog):
+    with patch_exchange(ok_response(rpst_for())), mock.patch.object(m, "write_atomic", side_effect=OSError("read-only")):
+        assert m.main(["--once"]) == 1
+    assert "RPST exchange failed" in caplog.text
+
+
 def test_main_bad_config(monkeypatch, caplog):
     monkeypatch.delenv("RPST_DOMAIN_URL", raising=False)
     assert m.main([]) == 1
