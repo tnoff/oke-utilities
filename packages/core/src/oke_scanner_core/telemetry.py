@@ -22,6 +22,22 @@ from opentelemetry._logs import set_logger_provider
 from opentelemetry.instrumentation.logging.handler import LoggingHandler
 
 
+# Loggers whose records must never reach the OTLP log handler. The log
+# exporter POSTs over urllib3 from the batch processor's worker thread, and
+# urllib3 emits a DEBUG line per request; with the root logger at DEBUG that
+# line is itself exported, whose POST emits another line, and so on. The
+# queue never drains, so `force_flush()` / `shutdown()` never return and the
+# process hangs at exit until the Job's activeDeadlineSeconds kills it.
+_EXPORTER_LOGGERS = ("urllib3", "opentelemetry")
+
+
+class _ExcludeExporterLogs(logging.Filter):  # pylint: disable=too-few-public-methods
+    """Drop records emitted by the OTLP exporter's own transport stack."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not record.name.startswith(_EXPORTER_LOGGERS)
+
+
 def setup_telemetry(cfg: Any) -> tuple[Optional[MeterProvider], Optional[LoggerProvider]]:
     """Initialize OpenTelemetry with OTLP exporters based on configuration.
 
@@ -51,6 +67,7 @@ def setup_telemetry(cfg: Any) -> tuple[Optional[MeterProvider], Optional[LoggerP
         log_exporter = OTLPLogExporter()
         logger_provider.add_log_record_processor(BatchLogRecordProcessor(log_exporter))
         handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
+        handler.addFilter(_ExcludeExporterLogs())
         logging.getLogger().addHandler(handler)
         logging.info("OTLP logs enabled")
     else:

@@ -1,7 +1,8 @@
 """Tests for oke_scanner_core.telemetry module."""
 
+import logging
 from unittest.mock import Mock, patch
-from oke_scanner_core.telemetry import setup_telemetry, shutdown_telemetry
+from oke_scanner_core.telemetry import _ExcludeExporterLogs, setup_telemetry, shutdown_telemetry
 
 
 class TestSetupTelemetry:
@@ -105,3 +106,37 @@ class TestShutdownTelemetry:
 
         logger.info.assert_any_call("Shutting down telemetry...")
         logger.info.assert_any_call("Telemetry shutdown complete")
+
+
+class TestExcludeExporterLogs:
+    """The OTLP log handler must not re-export the exporter's own HTTP logs."""
+
+    @staticmethod
+    def _record(name):
+        return logging.LogRecord(name, logging.DEBUG, __file__, 1, "msg", None, None)
+
+    def test_drops_exporter_transport_loggers(self):
+        flt = _ExcludeExporterLogs()
+        assert not flt.filter(self._record("urllib3.connectionpool"))
+        assert not flt.filter(self._record("opentelemetry.exporter.otlp.proto.http._log_exporter"))
+
+    def test_keeps_application_loggers(self):
+        flt = _ExcludeExporterLogs()
+        assert flt.filter(self._record("ocir_cleanup.main"))
+        assert flt.filter(self._record("scan.main"))
+
+    @patch('oke_scanner_core.telemetry.get_aggregated_resources')
+    @patch('oke_scanner_core.telemetry.LoggerProvider')
+    @patch('oke_scanner_core.telemetry.OTLPLogExporter')
+    @patch('oke_scanner_core.telemetry.BatchLogRecordProcessor')
+    @patch('oke_scanner_core.telemetry.LoggingHandler')
+    def test_setup_attaches_filter_to_log_handler(self, mock_handler_class, *_mocks):
+        """setup_telemetry installs the exporter-log filter on the root handler."""
+        root = logging.getLogger()
+        before = list(root.handlers)
+        try:
+            setup_telemetry(Mock(otlp_metrics_enabled=False, otlp_logs_enabled=True))
+            (flt,) = mock_handler_class.return_value.addFilter.call_args.args
+            assert isinstance(flt, _ExcludeExporterLogs)
+        finally:
+            root.handlers[:] = before
