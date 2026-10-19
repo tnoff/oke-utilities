@@ -190,7 +190,8 @@ them out of band would cause state drift (see the secret-rotation runbook in
 ## JWKS publisher
 
 Part of federating in-cluster workloads to OCI with ServiceAccount tokens
-(tnoff/terraform#191). OCI Identity Domains verifies a workload's token against
+(tnoff/terraform#191; [operator doc](https://github.com/tnoff/terraform-admin/blob/main/docs/k8s-workload-federation.md)
+covers the whole design, onboarding and failure modes). OCI Identity Domains verifies a workload's token against
 the cluster's public key set, but the API server is private, so the set is
 hosted in a public bucket. Each run reads the live set from the API server with
 the pod's own ServiceAccount and overwrites the hosted object if it differs.
@@ -228,7 +229,8 @@ is the signal.
 ## RPST sidecar
 
 Part of federating in-cluster workloads to OCI with ServiceAccount tokens
-(tnoff/terraform#191). The sidecar trades the pod's projected ServiceAccount
+(tnoff/terraform#191; [operator doc](https://github.com/tnoff/terraform-admin/blob/main/docs/k8s-workload-federation.md)
+covers onboarding a workload, the policy rules and failure modes). The sidecar trades the pod's projected ServiceAccount
 token for an OCI resource principal session token (RPST) at the identity
 domain's token endpoint, writes it and its private key to a shared in-memory
 volume, and repeats before it expires. The main container then signs OCI SDK
