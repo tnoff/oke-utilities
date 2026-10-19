@@ -9,7 +9,7 @@
 # out until those plugins are wired up.
 #
 # Six library Components now: one per real deployable (oke-scan,
-# secret-age-tracker, ocir-cleanup, jwks-publisher, rpst-sidecar) plus the shared
+# secret-age-tracker, ocir-cleanup, jwks-publisher, rpst-sidecar, audit-watch) plus the shared
 # oke-scanner-core (docs/projects/oke-security-scanner-package-split.md), where
 # there used to be one standing in for all three CronJobs' image. Each of the three
 # CronJob Components in docker-apps' own catalog-info.yaml should
@@ -166,4 +166,21 @@ spec:
   lifecycle: experimental
   dependsOn:
     # Creates the identity domain, the token-exchange app and the policies this trades against.
+    - component:default/terraform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: audit-watch
+  description: >-
+    CronJob that summarises what OCI resource principals did in the Audit log and warns on
+    denied calls and unexpected writes (tnoff/terraform#191). Its own package
+    (packages/audit_watch/) and image; the OCI SDK is its only dependency. Authenticates as a
+    resource principal through the rpst sidecar. See the README's "Audit watch" section.
+spec:
+  type: service
+  owner: group:default/admin
+  lifecycle: experimental
+  dependsOn:
+    - component:default/rpst-sidecar
     - component:default/terraform

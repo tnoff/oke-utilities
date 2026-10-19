@@ -4,7 +4,7 @@ Five independent packages/images for the OKE cluster. Three CronJobs share one
 library: image vulnerability scanning (`oke-scan`, with OpenTelemetry
 observability), OCIR tag/manifest cleanup (`ocir-cleanup`), and secret-age
 tracking (`secret-age-tracker`). The JWKS publisher
-(`jwks-publisher`) and the RPST sidecar (`rpst-sidecar`, a sidecar container rather than a CronJob) stand alone. The deployed manifests, schedules and
+(`jwks-publisher`), the RPST sidecar (`rpst-sidecar`, a sidecar container rather than a CronJob) and the audit watcher (`audit-watch`) stand alone. The deployed manifests, schedules and
 operations live in `tnoff/docker-apps` (`apps/security-scanner/`, with a
 TechDocs site at `techdocs/oke-utilities`); this repo holds the code and images.
 
@@ -19,6 +19,7 @@ TechDocs site at `techdocs/oke-utilities`); this repo holds the code and images.
 | Secret-age Tracker | Yes | Its own package/image (`packages/secret_age/`, `python -m secret_age`). Reports credential ages across OCI IAM credentials, Kubernetes Secrets (by the `secret-age-tracker.tnoff/last-rotated` annotation, falling back to `creationTimestamp`), and operator-tracked admin tfvars (a ledger ConfigMap). See [Secret-age tracker](#secret-age-tracker). |
 | JWKS publisher | Yes | Its own package/image (`packages/jwks_publisher/`, `python -m jwks_publisher`). Mirrors the cluster's ServiceAccount public key set into the Object Storage object that OCI Identity Domains fetches on every token exchange. See [JWKS publisher](#jwks-publisher). |
 | RPST sidecar | No | Its own package/image (`packages/rpst_sidecar/`, `python -m rpst_sidecar`). A sidecar that trades the pod's projected ServiceAccount token for an OCI resource principal session token on a loop, so the main container needs no stored API key. See the "RPST sidecar" section. |
+| Audit watch | Yes | Its own package/image (`packages/audit_watch/`, `python -m audit_watch`). A CronJob that summarises what OCI resource principals did in the Audit log and warns on denied calls and unexpected writes. See [Audit watch](#audit-watch). |
 
 The scanner, cleanup and secret-age tracker share `packages/core/` (`oke-scanner-core`: image discovery, k8s
 auth, the Discord webhook client, and, for the scanner and cleanup, which run
@@ -332,6 +333,42 @@ OCI_RESOURCE_PRINCIPAL_REGION=<region>
 
 then `oci.auth.signers.get_resource_principals_signer()`. The SDK re-reads the
 token file, so refreshes are picked up without restarting the main container.
+
+## Audit watch
+
+`python -m audit_watch` (CronJob `audit-watch` in `tnoff/docker-apps`, namespace `monitoring`)
+reads the OCI Audit log for a short span in every compartment it can see and keeps only the
+events made by **resource principals** (`auth_type == "resource"`: the federated workloads
+from tnoff/terraform#191 and OCI's own services such as the OKE cloud controller). It logs:
+
+- `audit-watch seen event=... status=... count=... ips=...`, one line per (event, status)
+  group, at INFO;
+- `audit-watch DENIED ...` at WARNING for status 401/403/404. OCI answers a call a principal
+  may not make with 404 `NotAuthorizedOrNotFound`, and such calls are logged;
+- `audit-watch UNEXPECTED_WRITE ...` at WARNING for any operation that is not a read
+  (`Get`, `List`, `Summarize`, `Search`, `Inspect`, `Read`, `Describe`) and not in
+  `KNOWN_WRITE_EVENTS`;
+- a `summary` line with the span, compartment count, event count and flagged count.
+
+Grafana alerts on the two WARNING kinds (docker-apps `monitoring/grafana/rules.yaml`).
+
+**What it cannot do.** Events from a resource principal carry no principal name and one shared
+principal id, so a call cannot be tied to a ServiceAccount, only to its source IP. It sees a
+federated workload being refused or doing something unexpected, not which one. It never reads
+`identity.credentials` (write events carry a live token there) and logs no credential data.
+
+**Auth.** A resource principal itself, through the same sidecar as any federated workload. Its
+policy (`read audit-events in tenancy`) is in tnoff/terraform `oci/oci.tf` (`k8s_workloads`).
+The compartments are discovered with `list_compartments` on the tenancy.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `WINDOW_MINUTES` | No | `12` | Length of the audited span; match the CronJob schedule plus a little overlap |
+| `LAG_MINUTES` | No | `5` | The span ends this long before now, so events have reached the Audit service |
+| `KNOWN_WRITE_EVENTS` | No | `UpdateInternalVnic,UpdateNetworkLoadBalancer` | Write operations resource principals normally perform |
+
+Exit code 0 when the span was audited (flags are alerts, not failures), 1 when it could not
+be, so a broken watcher fails its Job.
 
 ## Scoping a cleanup run
 
