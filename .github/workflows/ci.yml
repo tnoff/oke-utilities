@@ -102,6 +102,7 @@ jobs:
       ocir_cleanup_image: ${{ steps.filter.outputs.ocir_cleanup_image }}
       jwks_publisher_image: ${{ steps.filter.outputs.jwks_publisher_image }}
       rpst_sidecar_image: ${{ steps.filter.outputs.rpst_sidecar_image }}
+      audit_watch_image: ${{ steps.filter.outputs.audit_watch_image }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -126,6 +127,7 @@ jobs:
           OCIR_CLEANUP_IMAGE=false
           JWKS_PUBLISHER_IMAGE=false
           RPST_SIDECAR_IMAGE=false
+          AUDIT_WATCH_IMAGE=false
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             case "$f" in
@@ -144,6 +146,7 @@ jobs:
             # Likewise stands alone.
             case "$f" in
               packages/rpst_sidecar/*) RPST_SIDECAR_IMAGE=true ;;
+              packages/audit_watch/*) AUDIT_WATCH_IMAGE=true ;;
             esac
           done <<< "${FILES}"
           echo "image inputs changed: ${IMAGE}"
@@ -151,11 +154,13 @@ jobs:
           echo "ocir-cleanup image inputs changed: ${OCIR_CLEANUP_IMAGE}"
           echo "jwks-publisher image inputs changed: ${JWKS_PUBLISHER_IMAGE}"
           echo "rpst-sidecar image inputs changed: ${RPST_SIDECAR_IMAGE}"
+          echo "audit-watch image inputs changed: ${AUDIT_WATCH_IMAGE}"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "secret_age_image=${SECRET_AGE_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "ocir_cleanup_image=${OCIR_CLEANUP_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "jwks_publisher_image=${JWKS_PUBLISHER_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "rpst_sidecar_image=${RPST_SIDECAR_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "audit_watch_image=${AUDIT_WATCH_IMAGE}" >> "$GITHUB_OUTPUT"
 
   # GitLab ran the build and the image scan as two jobs, shipping the image
   # between them as a tarball through an object-storage bucket.
@@ -204,6 +209,14 @@ jobs:
     with:
       dockerfile: packages/rpst_sidecar/Dockerfile
 
+  build-audit-watch:
+    name: Build and scan audit-watch image
+    needs: changes
+    if: needs.changes.outputs.audit_watch_image == 'true'
+    uses: tnoff/github-workflows/.github/workflows/docker-build-check.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # docker-build-check-v1.0.0
+    with:
+      dockerfile: packages/audit_watch/Dockerfile
+
   bump-version:
     name: Bump version
     # Matches the GitLab rule. The dev- prefix comes from the shared renovate
@@ -251,7 +264,7 @@ jobs:
     # This job always runs and its name never changes, so the ruleset requires
     # exactly one context and the jobs underneath stay free to change.
     if: always()
-    needs: [secrets, tox, changes, build, build-secret-age, build-ocir-cleanup, build-jwks-publisher, build-rpst-sidecar, contracts, metadata]
+    needs: [secrets, tox, changes, build, build-secret-age, build-ocir-cleanup, build-jwks-publisher, build-rpst-sidecar, build-audit-watch, contracts, metadata]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -267,6 +280,7 @@ jobs:
           echo "build-ocir-cleanup: ${{ needs['build-ocir-cleanup'].result }}"
           echo "build-jwks-publisher: ${{ needs['build-jwks-publisher'].result }}"
           echo "build-rpst-sidecar: ${{ needs['build-rpst-sidecar'].result }}"
+          echo "build-audit-watch: ${{ needs['build-audit-watch'].result }}"
           echo "contracts:          ${{ needs.contracts.result }}"
 
       - name: Fail if any job failed
@@ -281,6 +295,7 @@ jobs:
           needs['build-ocir-cleanup'].result == 'failure' || needs['build-ocir-cleanup'].result == 'cancelled' ||
           needs['build-jwks-publisher'].result == 'failure' || needs['build-jwks-publisher'].result == 'cancelled' ||
           needs['build-rpst-sidecar'].result == 'failure' || needs['build-rpst-sidecar'].result == 'cancelled' ||
+          needs['build-audit-watch'].result == 'failure' || needs['build-audit-watch'].result == 'cancelled' ||
           needs.contracts.result == 'failure' || needs.contracts.result == 'cancelled' ||
           needs.metadata.result == 'failure' || needs.metadata.result == 'cancelled'
         run: |

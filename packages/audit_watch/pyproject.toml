@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audit-watch"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "oci==2.187.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "bandit",
+    "pylint==4.1.3",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pytest-mock==3.16.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# No [tool.pylint.*] here: tox lints from the repo root, so root pyproject.toml's
+# blocks are the ones in effect (see packages/secret_age/pyproject.toml).

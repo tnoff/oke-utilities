@@ -59,6 +59,7 @@ jobs:
       ocir_cleanup_image: ${{ steps.filter.outputs.ocir_cleanup_image }}
       jwks_publisher_image: ${{ steps.filter.outputs.jwks_publisher_image }}
       rpst_sidecar_image: ${{ steps.filter.outputs.rpst_sidecar_image }}
+      audit_watch_image: ${{ steps.filter.outputs.audit_watch_image }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -84,6 +85,7 @@ jobs:
             echo "ocir_cleanup_image=true" >> "$GITHUB_OUTPUT"
             echo "jwks_publisher_image=true" >> "$GITHUB_OUTPUT"
             echo "rpst_sidecar_image=true" >> "$GITHUB_OUTPUT"
+            echo "audit_watch_image=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           FILES="$(git diff --name-only "${BEFORE}" "${AFTER}")"
@@ -92,6 +94,7 @@ jobs:
           OCIR_CLEANUP_IMAGE=false
           JWKS_PUBLISHER_IMAGE=false
           RPST_SIDECAR_IMAGE=false
+          AUDIT_WATCH_IMAGE=false
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             case "$f" in
@@ -109,6 +112,7 @@ jobs:
             esac
             case "$f" in
               packages/rpst_sidecar/*) RPST_SIDECAR_IMAGE=true ;;
+              packages/audit_watch/*) AUDIT_WATCH_IMAGE=true ;;
             esac
           done <<< "${FILES}"
           echo "changed files:"
@@ -118,11 +122,13 @@ jobs:
           echo "ocir-cleanup image inputs changed: ${OCIR_CLEANUP_IMAGE}"
           echo "jwks-publisher image inputs changed: ${JWKS_PUBLISHER_IMAGE}"
           echo "rpst-sidecar image inputs changed: ${RPST_SIDECAR_IMAGE}"
+          echo "audit-watch image inputs changed: ${AUDIT_WATCH_IMAGE}"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "secret_age_image=${SECRET_AGE_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "ocir_cleanup_image=${OCIR_CLEANUP_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "jwks_publisher_image=${JWKS_PUBLISHER_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "rpst_sidecar_image=${RPST_SIDECAR_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "audit_watch_image=${AUDIT_WATCH_IMAGE}" >> "$GITHUB_OUTPUT"
 
   assemble-changelog:
     name: Assemble changelog
@@ -320,6 +326,31 @@ jobs:
       namespace: ${{ vars.OCI_NAMESPACE }}
       repo_name: rpst_sidecar
       dockerfile: packages/rpst_sidecar/Dockerfile
+    secrets:
+      oidc_exchange_client_secret: ${{ secrets.OIDC_EXCHANGE_CLIENT_SECRET }}
+      oci_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+
+  # Push only for now, like rpst-sidecar: no docker-apps pin exists yet.
+  push-image-audit-watch:
+    name: Push audit-watch image
+    needs: changes
+    if: >-
+      ${{ needs.changes.outputs.audit_watch_image == 'true'
+          && !startsWith(github.event.head_commit.message, 'docs: assemble changelog') }}
+    # Logs in to OCIR with a short-lived token from this job's GitHub OIDC identity, not a stored
+    # credential (tnoff/terraform#180). OCI maps this repo's push to main to a user that may push
+    # only this repo's OCIR repositories (terraform-admin ocir-pushers.tf, which must name audit_watch before the first push).
+    permissions:
+      contents: read
+      id-token: write
+    uses: tnoff/github-workflows/.github/workflows/docker-push-oidc.yml@5a6f80dffddfa833301b438ec9b2052d7f2c24f2  # docker-push-oidc-v1.0.0
+    with:
+      oidc_exchange_domain_url: ${{ vars.OIDC_EXCHANGE_DOMAIN_URL }}
+      oidc_exchange_client_id: ${{ vars.OIDC_EXCHANGE_CLIENT_ID }}
+      registry: ${{ vars.OCI_REGISTRY }}
+      namespace: ${{ vars.OCI_NAMESPACE }}
+      repo_name: audit_watch
+      dockerfile: packages/audit_watch/Dockerfile
     secrets:
       oidc_exchange_client_secret: ${{ secrets.OIDC_EXCHANGE_CLIENT_SECRET }}
       oci_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
