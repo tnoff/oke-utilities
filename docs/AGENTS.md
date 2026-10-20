@@ -155,7 +155,7 @@ The `Image` dataclass: parses `registry / repo_name / tag`, strips digest suffix
 `DiscordWebhookClient(webhook_url)` — `send_message(content_list)` and `send_file(message_content, file_contents, file_name)`. Just the low-level webhook mechanics; report-shape formatting (which table columns, which result type) stays in the package that owns that report (`packages/scan/src/scan/discord_notifier.py`'s `send_image_scan_report`, `packages/ocir_cleanup/src/ocir_cleanup/discord_notifier.py`'s `send_cleanup_recommendations`/`send_deletion_results`). Each of those wraps a `DiscordWebhookClient` internally rather than importing `requests` directly.
 
 ### `packages/ocir_cleanup/src/ocir_cleanup/registry_client.py`
-OCIR-only; there is no Docker Hub / ghcr.io version-check logic. `oci` is a dependency of `ocir_cleanup` and `secret_age` only, not of scan.
+OCIR-only; there is no Docker Hub / ghcr.io version-check logic. `oci` is a dependency of `ocir_cleanup` and `secret_age` only, not of scan. Both build their OCI clients as a resource principal when `OCI_RESOURCE_PRINCIPAL_VERSION` is set (region and tenancy from the signer), otherwise from `~/.oci/config`. `OCIR_COMPARTMENT_IDS` replaces the all-compartments search in `_list_all_compartments`: that search 404s once per compartment lacking the repo, which audit-watch reads as a refused call.
 
 Properties:
 - `oci_registry` — derived from the OCI config region.

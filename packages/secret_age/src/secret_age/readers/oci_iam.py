@@ -1,11 +1,12 @@
 """OCI IAM reader: per user, list auth_tokens / customer_secret_keys / api_keys
 and report their `time_created` as the rotation age.
 
-Requires the security-scanner-read-bot user (or any caller authed via the
-mounted ~/.oci/config) to have tenancy verb `inspect users` — added in
-the same wave as this code per docs/projects/secret-age-tracker.md.
+Needs the tenancy verb `read users` (`inspect users` does not cover the credential
+sub-resources), either on the user behind the mounted ~/.oci/config or on the
+federated ServiceAccount's policy when run as a resource principal.
 """
 
+import os
 from datetime import date, datetime, timezone
 from logging import getLogger
 
@@ -47,8 +48,12 @@ def read_findings(cfg: SecretAgeConfig) -> list[Finding]:
         return []
 
     today = datetime.now(timezone.utc).date()
-    config = oci.config.from_file()
-    identity = oci.identity.IdentityClient(config)
+    # Resource principal when the pod carries an rpst sidecar, otherwise ~/.oci/config.
+    if os.getenv("OCI_RESOURCE_PRINCIPAL_VERSION"):
+        signer = oci.auth.signers.get_resource_principals_signer()
+        identity = oci.identity.IdentityClient({"region": signer.region}, signer=signer)
+    else:
+        identity = oci.identity.IdentityClient(oci.config.from_file())
 
     findings: list[Finding] = []
     users = oci.pagination.list_call_get_all_results(
