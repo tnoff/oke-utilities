@@ -12,7 +12,7 @@ from oke_scanner_core.k8s_client import KubernetesClient
 
 from .config import Config
 from .telemetry import setup_telemetry, shutdown_telemetry, create_metrics, Metrics
-from .scanner import TrivyScanner, CompleteScanResult
+from .scanner import TrivyScanner, CompleteScanResult, ImageNotFoundError
 from .discord_notifier import DiscordNotifier
 
 
@@ -94,7 +94,19 @@ def run_scan(
 
     for idx, image in enumerate(sorted(images), 1):
         logger.info(f"[{idx}/{len(images)}] Scanning: {image.full_name}")
-        result = scanner.scan_image(image)
+        try:
+            result = scanner.scan_image(image)
+        except ImageNotFoundError:
+            if image not in k8s_client.finished_only_images:
+                # A live pod runs an image the registry no longer has: a real problem
+                logger.error(f"Image scan failed, image no longer in registry but used by a live pod: {image.full_name}")
+                scan_results.add_result(None, image)
+                continue
+            # Only finished pods (e.g. old CronJob history) still name it; the
+            # registry cleanup deleted the tag, so there is nothing to scan
+            logger.warning(f"Skipping {image.full_name}: no longer in registry, only referenced by finished pods")
+            scan_results.skipped_images.append(image)
+            continue
         scan_results.add_result(result, image)
 
     if notifier:

@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import Mock, patch
 from oke_scanner_core.image import Image
-from scan.scanner import CompleteScanResult, ScanResult
+from scan.scanner import CompleteScanResult, ImageNotFoundError, ScanResult
 from scan.main import main, setup_otel, send_scan_metrics, parse_extra_images, run_scan
 
 
@@ -322,6 +322,44 @@ class TestRunScanExtraImages:
         report = notifier.send_image_scan_report.call_args.args[0]
         # one bad reference plus the good one whose (mocked) scan returned None
         assert report.failed_scans == 2
+
+    def test_missing_image_only_in_finished_pods_is_skipped_not_failed(self, base_config, scanner_and_k8s):
+        scanner, k8s = scanner_and_k8s
+        gone = Image("iad.ocir.io/tnoff/app:gone")
+        k8s.get_all_images.return_value = {gone}
+        k8s.finished_only_images = {gone}
+        scanner.scan_image.side_effect = ImageNotFoundError(gone.full_name)
+
+        results = run_scan(base_config, None, None)
+
+        assert results.failed_scans == 0
+        assert results.failed_images == []
+        assert results.skipped_images == [gone]
+
+    def test_missing_image_used_by_live_pod_is_a_failure(self, base_config, scanner_and_k8s):
+        scanner, k8s = scanner_and_k8s
+        gone = Image("iad.ocir.io/tnoff/app:gone")
+        k8s.get_all_images.return_value = {gone}
+        k8s.finished_only_images = set()
+        scanner.scan_image.side_effect = ImageNotFoundError(gone.full_name)
+
+        results = run_scan(base_config, None, None)
+
+        assert results.failed_scans == 1
+        assert results.failed_images == [gone]
+        assert results.skipped_images == []
+
+    def test_missing_extra_image_is_a_failure(self, base_config, scanner_and_k8s):
+        """An extra image is never discovered from pods, so a missing one is not 'finished only'."""
+        scanner, k8s = scanner_and_k8s
+        k8s.get_all_images.return_value = set()
+        k8s.finished_only_images = set()
+        base_config.extra_images = ["iad.ocir.io/tnoff/playball:latest"]
+        scanner.scan_image.side_effect = ImageNotFoundError("iad.ocir.io/tnoff/playball:latest")
+
+        results = run_scan(base_config, None, None)
+
+        assert results.failed_scans == 1
 
     def test_no_extras_scans_only_deployed(self, base_config, scanner_and_k8s):
         scanner, k8s = scanner_and_k8s

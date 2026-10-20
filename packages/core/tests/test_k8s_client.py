@@ -105,9 +105,10 @@ class TestKubernetesClient:
             assert "production" in namespaces
             assert "kube-system" not in namespaces
 
-    def _make_pod(self, containers=(), init_containers=()):
+    def _make_pod(self, containers=(), init_containers=(), phase="Running"):
         """Build a pod mock with the given container and init-container images."""
         pod = Mock()
+        pod.status.phase = phase
         pod.spec.containers = [Mock(image=img) for img in containers] if containers else None
         pod.spec.init_containers = [Mock(image=img) for img in init_containers] if init_containers else None
         return pod
@@ -124,27 +125,67 @@ class TestKubernetesClient:
         list_result.items = [pod_a, pod_b]
         k8s_client.core_v1.list_namespaced_pod.return_value = list_result
 
-        images = k8s_client._get_namespace_images("default")
+        live, finished = k8s_client._get_namespace_images("default")
 
-        full_names = {img.full_name for img in images}
+        full_names = {img.full_name for img in live}
         assert full_names == {
             "docker.io/library/nginx:1.27",
             "docker.io/library/busybox:1.36",
             "iad.ocir.io/ns/app:v1.0.0",
         }
+        assert finished == set()
+
+    def test_get_namespace_images_splits_finished_pods(self, k8s_client):
+        """Succeeded/Failed pods land in `finished`, every other phase in `live`."""
+        pods = [
+            self._make_pod(containers=["iad.ocir.io/ns/live:1"], phase="Running"),
+            self._make_pod(containers=["iad.ocir.io/ns/pending:1"], phase="Pending"),
+            self._make_pod(containers=["iad.ocir.io/ns/done:1"], phase="Succeeded"),
+            self._make_pod(containers=["iad.ocir.io/ns/broke:1"], init_containers=["iad.ocir.io/ns/init:1"],
+                           phase="Failed"),
+        ]
+        no_status = self._make_pod(containers=["iad.ocir.io/ns/nostatus:1"])
+        no_status.status = None
+        k8s_client.core_v1.list_namespaced_pod.return_value = Mock(items=pods + [no_status])
+
+        live, finished = k8s_client._get_namespace_images("default")
+
+        assert {i.full_name for i in live} == {
+            "iad.ocir.io/ns/live:1", "iad.ocir.io/ns/pending:1", "iad.ocir.io/ns/nostatus:1"}
+        assert {i.full_name for i in finished} == {
+            "iad.ocir.io/ns/done:1", "iad.ocir.io/ns/broke:1", "iad.ocir.io/ns/init:1"}
+
+    def test_get_all_images_finished_only_excludes_images_a_live_pod_uses(self, k8s_client):
+        """finished_only_images is finished images minus anything a live pod also runs."""
+        def list_pods(namespace):
+            if namespace == "default":
+                pods = [self._make_pod(containers=["iad.ocir.io/ns/old:1"], phase="Succeeded"),
+                        self._make_pod(containers=["iad.ocir.io/ns/shared:1"], phase="Succeeded")]
+            else:
+                pods = [self._make_pod(containers=["iad.ocir.io/ns/shared:1"], phase="Running")]
+            return Mock(items=pods)
+
+        k8s_client.core_v1.list_namespaced_pod.side_effect = list_pods
+
+        images = k8s_client.get_all_images()
+
+        assert {i.full_name for i in images} == {"iad.ocir.io/ns/old:1", "iad.ocir.io/ns/shared:1"}
+        assert {i.full_name for i in k8s_client.finished_only_images} == {"iad.ocir.io/ns/old:1"}
 
     def test_get_namespace_images_returns_empty_on_api_exception(self, k8s_client):
         """_get_namespace_images logs and returns an empty set when the pod list fails."""
         k8s_client.core_v1.list_namespaced_pod.side_effect = ApiException(status=403, reason="Forbidden")
 
-        images = k8s_client._get_namespace_images("restricted")
+        live, finished = k8s_client._get_namespace_images("restricted")
 
-        assert images == set()
+        assert live == set()
+        assert finished == set()
 
     def test_get_all_images_aggregates_across_namespaces(self, k8s_client):
         """get_all_images merges images from each configured namespace."""
         def list_pods(namespace):
             pod = Mock()
+            pod.status.phase = "Running"
             if namespace == "default":
                 pod.spec.containers = [Mock(image="docker.io/library/nginx:1.27")]
                 pod.spec.init_containers = None
