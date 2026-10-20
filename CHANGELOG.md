@@ -5,6 +5,13 @@ All notable changes to the OKE Security Scanner will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-10-20
+
+### Changed
+
+- ocir_cleanup and secret_age can authenticate as an OCI resource principal (OCI_RESOURCE_PRINCIPAL_VERSION set) instead of a stored API key, and ocir_cleanup takes OCIR_COMPARTMENT_IDS to skip the per-compartment repository search
+- scan no longer fails the run when an image's tag was deleted from the registry and is only still named by finished pods (e.g. old CronJob history); a missing image used by a live pod, or an extra image, still fails
+
 ## [0.9.0] - 2026-10-20
 
 ### Changed

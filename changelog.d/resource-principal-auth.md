@@ -1,1 +1,0 @@
-ocir_cleanup and secret_age can authenticate as an OCI resource principal (OCI_RESOURCE_PRINCIPAL_VERSION set) instead of a stored API key, and ocir_cleanup takes OCIR_COMPARTMENT_IDS to skip the per-compartment repository search
