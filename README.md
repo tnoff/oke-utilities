@@ -88,6 +88,14 @@ region=us-ashburn-1
 key_file=~/.oci/oci_api_key.pem
 ```
 
+Or run as a **resource principal** (no stored key): add the `rpst` sidecar to the pod
+(see the rpst-sidecar section) and set `OCI_RESOURCE_PRINCIPAL_VERSION=2.2`,
+`OCI_RESOURCE_PRINCIPAL_RPST`, `OCI_RESOURCE_PRINCIPAL_PRIVATE_PEM` and
+`OCI_RESOURCE_PRINCIPAL_REGION`. `ocir_cleanup` and `secret_age` then sign every OCI call with
+that principal and never read `~/.oci/config`. The region must be the one the registry and IAM
+live in (`us-ashburn-1` here), because the registry URL is derived from it. The Docker registry
+credentials below are a separate auth token and are unaffected.
+
 ### Docker Registry (`~/.docker/config.json`)
 
 Docker credentials from `~/.docker/config.json` are used in two places, each in its own image:
@@ -147,6 +155,7 @@ Kubernetes Secrets.
 | `OCIR_CLEANUP_ENABLED` | No | `false` | Enable automatic deletion of old OCIR commit hash tags |
 | `OCIR_CLEANUP_KEEP_COUNT` | No | `5` | Number of recent commit hash tags to keep per repository (or per group, if `CLEANUP_GROUP_BY_REGEX` is set) |
 | `OCIR_EXTRA_REPOSITORIES` | No | `''` | Check extra repos for old images to remove |
+| `OCIR_COMPARTMENT_IDS` | No | `''` | Comma-separated compartment OCIDs that hold the OCIR repositories. Unset, the sweep searches every compartment the principal can see, which costs a 404 per compartment that lacks the repository; set it when running as a resource principal so those do not read as refused calls in the audit log |
 | `CLEANUP_PROTECT_TAGS_REGEX` | No | `''` | Tags whose name fully matches are excluded from the deletion pool. Used to protect mutable "channel" tags (e.g. `^\d+\.\d+$` for ci-base-images' `:3.X`). |
 | `CLEANUP_GROUP_BY_REGEX` | No | `''` | When set, the candidate pool is grouped by the first capture group and `keep_count` is applied per group. Prevents heavy churn in one group from pushing other groups' tags out of the keep window (e.g. `^(\d+\.\d+)` keeps the last N `:3.X-<sha>` per minor independently). |
 | `CLEANUP_REPO` | No | `''` | Scope the run to one OCIR repo (namespace-qualified, e.g. `tnoff/discord_bot`) |
@@ -169,7 +178,7 @@ Three readers, each failing independently (a broken reader logs and the others
 still report):
 
 - **OCI IAM**: per user, the `time_created` of auth tokens, customer secret
-  keys and API keys. Needs `inspect users` on the tenancy via `~/.oci/config`.
+  keys and API keys. Needs `read users` on the tenancy (`inspect users` does not cover the credential sub-resources), via `~/.oci/config` or as a resource principal (below).
 - **Kubernetes Secrets**: every non-system Secret (service-account-token, helm
   release and bootstrap-token types are skipped). Age comes from the
   `secret-age-tracker.tnoff/last-rotated` annotation (`YYYY-MM-DD`), falling

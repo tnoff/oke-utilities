@@ -45,17 +45,23 @@ class RegistryClient:
         # OCI registry (derived from OCI config region)
         self._oci_registry: Optional[str] = None
 
-        # Initialize OCI clients with config file authentication
+        # Initialize OCI clients: as a resource principal when the pod carries an rpst sidecar
+        # (OCI_RESOURCE_PRINCIPAL_VERSION set), otherwise from the config file (~/.oci/config)
         self.artifacts_client = None
         self.identity_client = None
         self.object_client = None
         self.oci_config = None
         try:
-            # Try to load OCI config from default location (~/.oci/config)
-            self.oci_config = oci.config.from_file()
-            self.artifacts_client = oci.artifacts.ArtifactsClient(self.oci_config)
-            self.identity_client = oci.identity.IdentityClient(self.oci_config)
-            self.object_client = oci.object_storage.ObjectStorageClient(self.oci_config)
+            client_kwargs = {}
+            if os.getenv("OCI_RESOURCE_PRINCIPAL_VERSION"):
+                signer = oci.auth.signers.get_resource_principals_signer()
+                self.oci_config = {"region": signer.region, "tenancy": signer.tenancy_id}
+                client_kwargs["signer"] = signer
+            else:
+                self.oci_config = oci.config.from_file()
+            self.artifacts_client = oci.artifacts.ArtifactsClient(self.oci_config, **client_kwargs)
+            self.identity_client = oci.identity.IdentityClient(self.oci_config, **client_kwargs)
+            self.object_client = oci.object_storage.ObjectStorageClient(self.oci_config, **client_kwargs)
             logger.info(f"RegistryClient initialized with OCI SDK for OCIR: {self.oci_registry}")
         except Exception as e:
             logger.warning(f"Failed to initialize OCI SDK client: {e}")
@@ -169,6 +175,12 @@ class RegistryClient:
         Returns:
             List of compartment OCIDs to search
         """
+        # A configured list skips the search: probing every compartment for each repository
+        # means a 404 per compartment that does not hold it, which an audit of resource-principal
+        # calls reads as a refused request.
+        if self.cfg.ocir_compartment_ids:
+            return list(self.cfg.ocir_compartment_ids)
+
         if not self.identity_client:
             return []
 
