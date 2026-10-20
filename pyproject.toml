@@ -41,7 +41,9 @@ version = { file = "VERSION" }
 packages = []
 
 [tool.pylint.main]
-jobs = 0
+# Not 0: parallel pylint pickles its linter with dill, which breaks on Python 3.15
+# (AttributeError: code object has no attribute co_lnotab).
+jobs = 1
 persistent = true
 recursive = true
 
