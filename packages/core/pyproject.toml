@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "oke-scanner-core"
 version = "0.3.0"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "kubernetes==37.0.0",
     "requests",

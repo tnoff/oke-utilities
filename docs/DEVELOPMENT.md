@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.13+
 - [Trivy](https://trivy.dev/latest/getting-started/installation/) installed and on `$PATH`
 - OCI config (`~/.oci/config`) with credentials for the tenancy you're targeting
 - A kubeconfig with access to the OKE cluster you want to scan
