@@ -230,7 +230,7 @@ The final image carries no `curl` / `wget` / `tar` / `git` / build toolchain. Th
 
 The project uses **GitHub Actions**. `.github/workflows/` holds three callers:
 
-- `ci.yml` — on pull requests: trufflehog secret scan, the tox matrix (pytest + pylint + bandit across Python 3.12–3.15) with a diff-cover gate, a conditional image build + image scan for EACH image (`changes` job outputs `image`/`secret_age_image`/`ocir_cleanup_image`, gated on separate path filters -- not a matrix, so each has its own `needs`/`if`; `packages/core/*` flips all three, since all three depend on it), `bump-version`, and `check-workflow-contracts` (catches a `uses:` whose inputs/secrets no longer match the pinned callee). The scan build/scan job passes `dockerfile: packages/scan/Dockerfile` explicitly (the reusable `docker-build-check.yml` defaults to a root `Dockerfile`, which does not exist here).
+- `ci.yml` — on pull requests: trufflehog secret scan, the tox matrix (pytest + pylint + bandit across Python 3.13–3.15) with a diff-cover gate, a conditional image build + image scan for EACH image (`changes` job outputs `image`/`secret_age_image`/`ocir_cleanup_image`, gated on separate path filters -- not a matrix, so each has its own `needs`/`if`; `packages/core/*` flips all three, since all three depend on it), `bump-version`, and `check-workflow-contracts` (catches a `uses:` whose inputs/secrets no longer match the pinned callee). The scan build/scan job passes `dockerfile: packages/scan/Dockerfile` explicitly (the reusable `docker-build-check.yml` defaults to a root `Dockerfile`, which does not exist here).
 - `release.yml` — on `main`: fold the changelog, tag from `VERSION` (shared across all three images), push each changed image to OCIR under its own OCIR repo name, and trigger a `docker-apps` pin bump per image (`oke-scan`, `secret-age-tracker` and `ocir-cleanup` are separate `bump_source`s, each its own explicit `push-image-*`/`trigger-bump-*` job pair -- not a matrix; matrix job outputs aren't addressable per-leg, and `trigger-bump` needs the exact tag its own paired push produced). Same `dockerfile: packages/scan/Dockerfile` override on the scan `push-image` job as `ci.yml`. Each job hardcodes its OCIR `repo_name` (`oke-scan`, `secret_age_tracker`, `ocir_cleanup`).
 - `scheduled.yml` — weekly: Renovate and branch cleanup.
 
@@ -244,7 +244,7 @@ and pylint actually use:
 - `[project.optional-dependencies].dev` — `bandit`, `pylint`, `pytest`, `pytest-cov`, `pytest-mock`, `pytest-asyncio`, `tox`, `coverage`. tox's `extras = dev` installs these for every testenv; no package's own pyproject.toml carries a competing copy.
 - `[tool.pylint.*]` — pylint rules (max line length 120, etc.). tox's combined `pylint packages/core/src packages/scan/src ...` invocation runs from repo-root cwd, and pylint discovers config from CWD -- so this is the block in effect for all four packages. No package's own `pyproject.toml` carries a `[tool.pylint.*]` block; don't add one without checking it would actually be read.
 
-`tox.ini` defines envs `py312`..`py315` and exposes `pytest`, `pylint`, `bandit` as individual envs.
+`tox.ini` defines envs `py313`..`py315` and exposes `pytest`, `pylint`, `bandit` as individual envs.
 
 Running locally:
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "secret-age-tracker"
 version = "0.1.0"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "oke-scanner-core",
     "kubernetes==37.0.0",
