@@ -9,6 +9,7 @@ from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk.metrics import MeterProvider
 from oke_scanner_core.image import Image
 from oke_scanner_core.k8s_client import KubernetesClient
+from oke_scanner_core.log_redaction import install_log_redaction
 
 from .config import Config
 from .telemetry import setup_telemetry, shutdown_telemetry, create_metrics, Metrics
@@ -129,6 +130,7 @@ def main() -> int:
             logging.StreamHandler(sys.stdout)
         ]
     )
+    install_log_redaction()
     logger.info("Initializing OKE Security Scanner")
 
     # Initialize providers as None so they're accessible in finally block

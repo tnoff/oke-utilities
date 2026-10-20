@@ -14,6 +14,7 @@ from logging import getLogger
 from typing import Optional
 
 from oke_scanner_core.k8s_client import KubernetesClient
+from oke_scanner_core.log_redaction import install_log_redaction
 from oke_scanner_core.telemetry import setup_telemetry, shutdown_telemetry
 
 from .config import CleanupConfig
@@ -97,6 +98,7 @@ def main() -> int:
             logging.StreamHandler(sys.stdout)
         ]
     )
+    install_log_redaction()
     logger.info("Initializing OCIR cleanup sweep")
 
     meter_provider = None
