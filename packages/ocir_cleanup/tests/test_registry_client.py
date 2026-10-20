@@ -2067,6 +2067,89 @@ class TestRegistryClientCoverage:
         # The SDK was called exactly once -> second image hit the duplicate-skip branch
         assert sdk_calls['count'] == 1
 
+    def _repo_with_old_tags(self, count=8):
+        """Registry listing of `count` tags v0.0.0..v0.{count-1}.0, oldest first."""
+        return [
+            Image(f'iad.ocir.io/ns/app:v0.{i}.0',
+                  created_at=datetime(2024, 1, i + 1, tzinfo=timezone.utc),
+                  digest=f'sha256:old{i}',
+                  ocid=f'ocid1.image.old{i}')
+            for i in range(count)
+        ]
+
+    @patch('ocir_cleanup.registry_client.oci')
+    def test_get_old_ocir_images_protects_every_deployed_tag_in_a_repo(self, mock_oci, config):
+        """Several pods can name different tags of one repo (a rollout in flight, or a
+        finished CronJob pod still in Job history). Every one must survive, whichever
+        image is visited first, even when both are far outside the keep window."""
+        self._make_client(mock_oci)
+        client = RegistryClient(config)
+        listing = self._repo_with_old_tags()
+        # v0.0.0 and v0.1.0 are the two oldest tags: normally the first to be deleted
+        deployed = [Image('iad.ocir.io/ns/app:v0.0.0'), Image('iad.ocir.io/ns/app:v0.1.0')]
+
+        for ordering in (deployed, list(reversed(deployed))):
+            with patch.object(client, '_get_ocir_images_via_sdk', return_value=listing), \
+                 patch.object(client, '_get_manifest_list_sub_digests', return_value=set()):
+                result = client.get_old_ocir_images(list(ordering), keep_count=5)
+
+            assert len(result) == 1
+            deleted = {im.tag for im in result[0].tags_to_delete}
+            assert deleted == {'v0.2.0'}  # 8 tags - 2 deployed = 6 candidates, keep newest 5
+
+    @patch('ocir_cleanup.registry_client.oci')
+    def test_get_old_ocir_images_protects_digest_shared_with_second_deployed_tag(self, mock_oci, config):
+        """A deployed tag that is not first must also protect its digest. v0.0.0 is the one
+        delete candidate, but it is byte-identical to the (old, deployed) v0.1.0, so
+        deleting it by OCID would break that deployed tag."""
+        self._make_client(mock_oci)
+        client = RegistryClient(config)
+        listing = self._repo_with_old_tags()
+        listing[0].digest = listing[1].digest
+        deployed = [Image('iad.ocir.io/ns/app:v0.7.0'), Image('iad.ocir.io/ns/app:v0.1.0')]
+
+        with patch.object(client, '_get_ocir_images_via_sdk', return_value=listing), \
+             patch.object(client, '_get_manifest_list_sub_digests', return_value=set()):
+            result = client.get_old_ocir_images(deployed, keep_count=5)
+
+        assert result == []
+
+    @patch('ocir_cleanup.registry_client.oci')
+    def test_get_old_ocir_images_tolerates_deployed_tag_missing_from_registry(self, mock_oci, config):
+        """A deployed tag already gone from the registry has nothing to protect and must
+        not break the pass or hide the real candidates."""
+        self._make_client(mock_oci)
+        client = RegistryClient(config)
+        listing = self._repo_with_old_tags()
+        deployed = [Image('iad.ocir.io/ns/app:v0.7.0'), Image('iad.ocir.io/ns/app:already-gone')]
+
+        with patch.object(client, '_get_ocir_images_via_sdk', return_value=listing), \
+             patch.object(client, '_get_manifest_list_sub_digests', return_value=set()):
+            result = client.get_old_ocir_images(deployed, keep_count=5)
+
+        deleted = {im.tag for im in result[0].tags_to_delete}
+        # 8 tags - deployed v0.7.0 = 7 candidates, keep newest 5 -> delete the 2 oldest
+        assert deleted == {'v0.0.0', 'v0.1.0'}
+
+    @patch('ocir_cleanup.registry_client.oci')
+    def test_get_old_ocir_images_scans_a_repo_once_even_without_a_recommendation(self, mock_oci, config):
+        """The pass is repo-wide, so a second image of a repo is never rescanned, even
+        when the first produced nothing to delete."""
+        self._make_client(mock_oci)
+        client = RegistryClient(config)
+        listing = self._repo_with_old_tags(count=3)  # under keep_count
+        calls = []
+
+        def fake_sdk(img):
+            calls.append(img.full_name)
+            return listing
+
+        deployed = [Image('iad.ocir.io/ns/app:v0.0.0'), Image('iad.ocir.io/ns/app:v0.1.0')]
+        with patch.object(client, '_get_ocir_images_via_sdk', side_effect=fake_sdk):
+            assert client.get_old_ocir_images(deployed, keep_count=5) == []
+
+        assert len(calls) == 1
+
     @patch('ocir_cleanup.registry_client.oci')
     def test_get_old_ocir_images_skips_non_ocir_images(self, mock_oci, config):
         self._make_client(mock_oci)
