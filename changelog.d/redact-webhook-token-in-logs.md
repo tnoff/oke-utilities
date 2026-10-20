@@ -1,1 +1,0 @@
-Discord webhook tokens are now redacted from log output (urllib3 DEBUG request lines, requests errors, tracebacks) in scan, ocir-cleanup and secret-age-tracker, via a LogRecord factory in oke-scanner-core so it covers stdout and the OTLP handler
