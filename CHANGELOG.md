@@ -5,6 +5,12 @@ All notable changes to the OKE Security Scanner will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-10-20
+
+### Changed
+
+- ocir-cleanup now protects every tag any pod names in a repo (a rollout in flight, or finished CronJob pods still in Job history), not just the first one it happened to visit; each repo is scanned once per run
+
 ## [0.10.0] - 2026-10-20
 
 ### Changed

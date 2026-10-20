@@ -1,1 +1,0 @@
-ocir-cleanup now protects every tag any pod names in a repo (a rollout in flight, or finished CronJob pods still in Job history), not just the first one it happened to visit; each repo is scanned once per run
