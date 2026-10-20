@@ -1,1 +1,0 @@
-scan no longer fails the run when an image's tag was deleted from the registry and is only still named by finished pods (e.g. old CronJob history); a missing image used by a live pod, or an extra image, still fails
