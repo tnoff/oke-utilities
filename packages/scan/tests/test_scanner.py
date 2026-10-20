@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 import pytest
 from unittest.mock import Mock, patch
-from scan.scanner import TrivyScanner, ScanResult, CVE, CVEDetails, CompleteScanResult
+from scan.scanner import TrivyScanner, ScanResult, CVE, CVEDetails, CompleteScanResult, ImageNotFoundError
 from oke_scanner_core.image import Image
 
 
@@ -446,3 +446,28 @@ class TestCompleteScanResult:
         assert len(complete.scan_results) == 2
         assert len(complete.failed_images) == 1
         assert complete.failed_images[0] == image3
+
+
+class TestImageNotFound:
+    """A registry 'image is gone' error is raised distinctly from other scan failures."""
+
+    @pytest.fixture
+    def scanner(self, base_config):
+        """Create a TrivyScanner instance."""
+        with patch('scan.scanner.logger'):
+            return TrivyScanner(base_config)
+
+    @pytest.mark.parametrize("marker", ["MANIFEST_UNKNOWN", "NAME_UNKNOWN"])
+    @patch('scan.scanner.subprocess.run')
+    def test_scan_image_raises_when_registry_says_image_is_gone(self, mock_run, marker, scanner):
+        mock_run.side_effect = subprocess.CalledProcessError(
+            1, "trivy", stderr=f"remote error: GET https://r/v2/x/manifests/t: {marker}: unknown")
+
+        with pytest.raises(ImageNotFoundError):
+            scanner.scan_image(Image("iad.ocir.io/tnoff/app:gone"))
+
+    @patch('scan.scanner.subprocess.run')
+    def test_scan_image_other_failures_still_return_none(self, mock_run, scanner):
+        mock_run.side_effect = subprocess.CalledProcessError(1, "trivy", stderr=None)
+
+        assert scanner.scan_image(Image("iad.ocir.io/tnoff/app:1")) is None

@@ -10,6 +10,8 @@ from .k8s_auth import load_k8s_config
 
 logger = getLogger(__name__)
 
+FINISHED_PHASES = ("Succeeded", "Failed")
+
 
 class KubernetesClient:
     """Client for discovering container images deployed in the cluster."""
@@ -37,10 +39,15 @@ class KubernetesClient:
             client.Configuration.set_default(default_cfg)
 
         self.core_v1 = client.CoreV1Api()
+        # Images seen only in finished (Succeeded/Failed) pods, set by
+        # get_all_images(). Completed CronJob pods linger in Job history and
+        # keep naming a tag that the registry cleanup may since have deleted.
+        self.finished_only_images: set[Image] = set()
 
     def get_all_images(self) -> set[Image]:
         """Get all unique container images deployed in the cluster."""
-        images = set()
+        live = set()
+        finished = set()
 
         try:
             # Get all namespaces
@@ -49,14 +56,17 @@ class KubernetesClient:
 
             # Get images from pods in each namespace
             for namespace in namespaces:
-                namespace_images = self._get_namespace_images(namespace)
-                images.update(namespace_images)
-                logger.info(f"Found {len(namespace_images)} images in namespace {namespace}")
+                namespace_live, namespace_finished = self._get_namespace_images(namespace)
+                live.update(namespace_live)
+                finished.update(namespace_finished)
+                logger.info(f"Found {len(namespace_live | namespace_finished)} images in namespace {namespace}")
 
         except ApiException as e:
             logger.error(f"Kubernetes API error (status {e.status}): {e}")
             raise
 
+        images = live | finished
+        self.finished_only_images = finished - live
         logger.info(f"Total unique images discovered: {len(images)}")
         return images
 
@@ -75,9 +85,14 @@ class KubernetesClient:
         ]
         return namespaces
 
-    def _get_namespace_images(self, namespace: str) -> set[Image]:
-        """Get all container images in a specific namespace."""
-        images = set()
+    def _get_namespace_images(self, namespace: str) -> tuple[set[Image], set[Image]]:
+        """Get the container images in a namespace as (live, finished).
+
+        `finished` holds images of Succeeded/Failed pods, `live` those of
+        every other pod; an image can appear in both.
+        """
+        live = set()
+        finished = set()
 
         try:
             # Get all pods in namespace
@@ -85,18 +100,19 @@ class KubernetesClient:
 
             # Extract container images
             for pod in pods.items:
+                target = finished if pod.status and pod.status.phase in FINISHED_PHASES else live
                 # Regular containers
                 if pod.spec.containers:
                     for container in pod.spec.containers:
                         if container.image:
-                            images.add(Image(container.image))
+                            target.add(Image(container.image))
 
                 # Init containers
                 if pod.spec.init_containers:
                     for container in pod.spec.init_containers:
                         if container.image:
-                            images.add(Image(container.image))
+                            target.add(Image(container.image))
 
         except ApiException as e:
             logger.info(f"Failed to get pods in namespace {namespace}: {e}")
-        return images
+        return live, finished

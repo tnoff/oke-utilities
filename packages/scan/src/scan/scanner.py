@@ -71,6 +71,7 @@ class CompleteScanResult():
     total_high_fixed: int = field(init=False)
     failed_scans: int = field(init=False)
     failed_images: list[Image] = field(default_factory=list)
+    skipped_images: list[Image] = field(default_factory=list)
     scan_results: list[ScanResult] = field(default_factory=list)
 
     def __post_init__(self):
@@ -94,6 +95,14 @@ class CompleteScanResult():
         return True
 
 logger = getLogger(__name__)
+
+# Registry error codes Trivy surfaces when the image reference no longer exists
+IMAGE_GONE_MARKERS = ("MANIFEST_UNKNOWN", "NAME_UNKNOWN")
+
+
+class ImageNotFoundError(Exception):
+    """The image's tag or repository no longer exists in its registry."""
+
 
 class TrivyScanner:
     """Wrapper for Trivy vulnerability scanner."""
@@ -166,6 +175,8 @@ class TrivyScanner:
             return None
 
         except subprocess.CalledProcessError as e:
+            if any(marker in (e.stderr or "") for marker in IMAGE_GONE_MARKERS):
+                raise ImageNotFoundError(image.full_name) from e
             logger.error(f"Image scan failed: {image.full_name} - {e.stderr}")
             return None
 
