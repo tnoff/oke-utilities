@@ -102,3 +102,21 @@ def test_read_findings_zero_creds_user(cfg):
         findings = read_findings(cfg)
 
     assert findings == []
+
+
+def test_read_findings_as_resource_principal(cfg, monkeypatch):
+    """With the rpst sidecar's env set, the Identity client is signed by the resource principal."""
+    monkeypatch.setenv("OCI_RESOURCE_PRINCIPAL_VERSION", "2.2")
+    signer = Mock(region="us-ashburn-1")
+    identity = Mock()
+
+    with patch("secret_age.readers.oci_iam.oci.auth.signers.get_resource_principals_signer",
+               return_value=signer), \
+         patch("secret_age.readers.oci_iam.oci.config.from_file") as from_file, \
+         patch("secret_age.readers.oci_iam.oci.identity.IdentityClient", return_value=identity) as build, \
+         patch("secret_age.readers.oci_iam.oci.pagination.list_call_get_all_results",
+               return_value=SimpleNamespace(data=[])):
+        assert read_findings(cfg) == []
+
+    build.assert_called_once_with({"region": "us-ashburn-1"}, signer=signer)
+    from_file.assert_not_called()

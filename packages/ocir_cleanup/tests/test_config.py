@@ -130,3 +130,10 @@ class TestCleanupConfig:
         config = CleanupConfig.from_env()
         assert config.cleanup_protect_tags_regex == r"^\d+\.\d+$"
         assert config.cleanup_group_by_regex == r"^(\d+\.\d+)"
+
+    def test_ocir_compartment_ids_parsed_and_default_empty(self, monkeypatch):
+        """OCIR_COMPARTMENT_IDS is a comma list; unset means search every compartment."""
+        assert CleanupConfig.from_env().ocir_compartment_ids == []
+        monkeypatch.setenv("OCIR_COMPARTMENT_IDS", "ocid1.compartment.a,,ocid1.compartment.b")
+        assert CleanupConfig.from_env().ocir_compartment_ids == [
+            "ocid1.compartment.a", "ocid1.compartment.b"]

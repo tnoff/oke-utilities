@@ -2,7 +2,7 @@
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -44,6 +44,9 @@ class CleanupConfig:
     # When set, the cleanup pass is scoped to this OCIR repo
     # (namespace-qualified, e.g. `tnoff/discord_bot`).
     cleanup_repo: str
+    # Compartments that hold the OCIR repositories. Empty means search every compartment the
+    # principal can see, which produces a 404 per compartment that lacks the repository.
+    ocir_compartment_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         if self.cleanup_protect_tags_regex:
@@ -87,4 +90,5 @@ class CleanupConfig:
             cleanup_protect_tags_regex=os.getenv("CLEANUP_PROTECT_TAGS_REGEX", ""),
             cleanup_group_by_regex=os.getenv("CLEANUP_GROUP_BY_REGEX", ""),
             cleanup_repo=os.getenv("CLEANUP_REPO", ""),
+            ocir_compartment_ids=[c for c in os.getenv("OCIR_COMPARTMENT_IDS", "").split(",") if c],
         )

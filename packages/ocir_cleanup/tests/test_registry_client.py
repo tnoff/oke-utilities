@@ -39,6 +39,44 @@ class TestRegistryClient:
         mock_oci.config.from_file.assert_called_once()
 
     @patch('ocir_cleanup.registry_client.oci')
+    def test_init_as_resource_principal(self, mock_oci, config, monkeypatch):
+        """With the rpst sidecar's env set, every client is built with the signer, not the config file."""
+        monkeypatch.setenv('OCI_RESOURCE_PRINCIPAL_VERSION', '2.2')
+        signer = Mock(region='us-ashburn-1', tenancy_id='ocid1.tenancy.rp')
+        mock_oci.auth.signers.get_resource_principals_signer.return_value = signer
+
+        client = RegistryClient(config)
+
+        assert client.oci_config == {'region': 'us-ashburn-1', 'tenancy': 'ocid1.tenancy.rp'}
+        mock_oci.config.from_file.assert_not_called()
+        for builder in (mock_oci.artifacts.ArtifactsClient, mock_oci.identity.IdentityClient,
+                        mock_oci.object_storage.ObjectStorageClient):
+            builder.assert_called_once_with(client.oci_config, signer=signer)
+        assert client.oci_registry == 'iad.ocir.io'
+
+    @patch('ocir_cleanup.registry_client.oci')
+    def test_init_resource_principal_failure_leaves_clients_unset(self, mock_oci, config, monkeypatch):
+        """A signer that cannot be built degrades like a missing config file."""
+        monkeypatch.setenv('OCI_RESOURCE_PRINCIPAL_VERSION', '2.2')
+        mock_oci.auth.signers.get_resource_principals_signer.side_effect = Exception('no rpst')
+
+        client = RegistryClient(config)
+
+        assert client.artifacts_client is None
+        assert client.oci_config is None
+
+    @patch('ocir_cleanup.registry_client.oci')
+    def test_list_all_compartments_uses_configured_ids(self, mock_oci, config):
+        """A configured compartment list skips the Identity search (and its per-compartment 404s)."""
+        mock_oci.config.from_file.return_value = {'tenancy': 'ocid1.tenancy.test'}
+        config.ocir_compartment_ids = ['ocid1.compartment.apps']
+
+        client = RegistryClient(config)
+
+        assert client._list_all_compartments() == ['ocid1.compartment.apps']
+        client.identity_client.list_compartments.assert_not_called()
+
+    @patch('ocir_cleanup.registry_client.oci')
     def test_init_without_oci_sdk(self, mock_oci, config):
         """Test RegistryClient initialization when OCI SDK fails."""
         mock_oci.config.from_file.side_effect = Exception("No config file")
