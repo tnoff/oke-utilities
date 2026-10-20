@@ -457,6 +457,14 @@ class RegistryClient:
         # protecting the deployed tag (it doesn't match :latest), so the
         # deployed image can land in the deletion list.
         existing_ocir_repos = {im.repo_name for im in images if im.is_ocir_image}
+        # Every tag some pod in the cluster names, per repo. A repo can have
+        # several (a rollout in flight, or finished CronJob pods that linger in
+        # Job history on an older tag); all of them must survive, not just
+        # whichever image happens to be visited first.
+        deployed_by_repo = defaultdict(set)
+        for im in images:
+            if im.is_ocir_image:
+                deployed_by_repo[f'{im.registry}/{im.repo_name}'].add(im.full_name)
         for extra_repo in extra_repositories:
             if extra_repo in existing_ocir_repos:
                 continue
@@ -468,11 +476,16 @@ class RegistryClient:
             logger.info(f'Scanning for versions of {image} that can be deleted')
             if not image.is_ocir_image:
                 continue
+            # The pass below covers the whole repo (every deployed tag is
+            # protected), so it never needs repeating for another image of it.
+            repo_names_processed.append(f'{image.registry}/{image.repo_name}')
+            deployed_names = deployed_by_repo.get(f'{image.registry}/{image.repo_name}', set()) | {image.full_name}
             all_images = self._get_ocir_images_via_sdk(image)
             # Exclude platform manifests - they are handled by get_orphaned_manifests()
             normal_images = [im for im in all_images if 'unknown@sha256:' not in im.full_name]
-            # Skip the 'latest' tag and the currently deployed image
-            filtered_images = [im for im in normal_images if im.tag != 'latest' and im.full_name != image.full_name]
+            # Skip the 'latest' tag and every currently deployed image
+            filtered_images = [im for im in normal_images
+                               if im.tag != 'latest' and im.full_name not in deployed_names]
 
             # CLEANUP_PROTECT_TAGS_REGEX: tags whose name fully matches are
             # excluded from the deletion candidate pool entirely. Used to
@@ -490,10 +503,11 @@ class RegistryClient:
                     )
 
             # Reduce to the delete candidates (all-but-newest keep_count,
-            # per group when CLEANUP_GROUP_BY_REGEX is set). The deployed tag
+            # per group when CLEANUP_GROUP_BY_REGEX is set). Each deployed tag
             # is resolved to its registry entry so we can protect its digest
             # even in the fallback case where it isn't among the scanned tags.
-            deployed_with_digest = next((im for im in all_images if im.full_name == image.full_name), image)
+            registry_by_name = {im.full_name: im for im in all_images}
+            deployed_with_digest = [registry_by_name.get(name) or Image(name) for name in sorted(deployed_names)]
             if group_re is not None:
                 # CLEANUP_GROUP_BY_REGEX: group remaining tags by the regex's
                 # first capture group and apply keep_count per-group, so heavy
@@ -540,8 +554,9 @@ class RegistryClient:
             # surviving tag's own digest plus any sub-manifests it references.
             delete_ocids = {im.ocid for im in filtered_images}
             surviving_images = [im for im in normal_images if im.ocid not in delete_ocids]
-            if deployed_with_digest not in surviving_images:
-                surviving_images.append(deployed_with_digest)
+            for deployed in deployed_with_digest:
+                if deployed not in surviving_images:
+                    surviving_images.append(deployed)
             # Protection is digest equality, so a surviving tag whose digest
             # did not resolve is a tag we cannot protect: any candidate sharing
             # its manifest would still be deleted by OCID and break it. Bail on
@@ -580,7 +595,6 @@ class RegistryClient:
             if not filtered_images:
                 continue
             recommendations.append(CleanupRecommendation(image.registry, image.repo_name, filtered_images))
-            repo_names_processed.append(f'{image.registry}/{image.repo_name}')
 
         return recommendations
 
