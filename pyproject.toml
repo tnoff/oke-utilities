@@ -20,7 +20,7 @@ name = "oke-utilities-dev"
 # root, which nothing does anymore, but it's left in place rather than
 # ripped out along with everything else that changed here.
 dynamic = ["version"]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 
 [project.optional-dependencies]
 dev = [
