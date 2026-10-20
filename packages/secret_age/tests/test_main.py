@@ -58,3 +58,14 @@ def test_main_skips_disabled_readers(monkeypatch):
          patch("secret_age.main.send_report"):
         main()
     oci.assert_not_called()
+
+
+def test_main_installs_log_redaction(monkeypatch):
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+    with patch("secret_age.main.install_log_redaction") as install, \
+         patch("secret_age.main.oci_reader.read_findings", return_value=[]), \
+         patch("secret_age.main.k8s_reader.read_findings", return_value=[]), \
+         patch("secret_age.main.layer1_reader.read_findings", return_value=[]), \
+         patch("secret_age.main.send_report"):
+        main()
+    install.assert_called_once()

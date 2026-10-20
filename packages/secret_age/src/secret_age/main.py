@@ -7,6 +7,8 @@ import logging
 import sys
 from logging import getLogger
 
+from oke_scanner_core.log_redaction import install_log_redaction
+
 from .aggregator import aggregate
 from .config import SecretAgeConfig
 from .discord_report import send_report
@@ -23,6 +25,7 @@ def main() -> int:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+    install_log_redaction()
     logger.info("Initializing secret-age tracker")
 
     cfg = SecretAgeConfig.from_env()

@@ -216,6 +216,17 @@ class TestMain:
 
         assert main() == 1
 
+    @patch('ocir_cleanup.main.install_log_redaction')
+    @patch('ocir_cleanup.main.logging')
+    @patch('ocir_cleanup.main.CleanupConfig')
+    def test_main_installs_log_redaction(self, mock_config_class, _mock_logging, mock_install):
+        """Redaction is in place before anything (config loading included) is logged."""
+        mock_config_class.from_env.side_effect = ValueError("bad config")
+
+        main()
+
+        mock_install.assert_called_once()
+
     @patch('ocir_cleanup.main.DiscordNotifier')
     @patch('ocir_cleanup.main.logging')
     @patch('ocir_cleanup.main.CleanupConfig')

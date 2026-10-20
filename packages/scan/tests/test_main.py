@@ -87,6 +87,18 @@ class TestMain:
         mock_meter_provider.force_flush.assert_called_once()
         mock_logger_provider.force_flush.assert_called_once()
 
+    @patch('scan.main.install_log_redaction')
+    @patch('scan.main.logging')
+    @patch('scan.main.Config')
+    def test_main_installs_log_redaction(self, mock_config_class, _mock_logging, mock_install):
+        """Redaction is in place before anything (config loading included) is logged."""
+        mock_config_class.from_env.side_effect = ValueError("bad config")
+
+        with pytest.raises(ValueError):
+            main()
+
+        mock_install.assert_called_once()
+
     @pytest.mark.parametrize('scan_succeeds,expected_exit', [(True, 0), (False, 1)])
     @patch('scan.main.DiscordNotifier')
     @patch('scan.main.logging')
