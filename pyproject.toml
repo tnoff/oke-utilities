@@ -27,10 +27,10 @@ dev = [
     "bandit",
     "coverage==7.16.2",
     "pylint==4.1.3",
-    "tox==4.65.5",
+    "tox==4.67.1",
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
-    "pytest-mock==3.16.0",
+    "pytest-mock==3.17.0",
     "pytest-asyncio==1.4.0",
 ]
 
