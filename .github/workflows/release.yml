@@ -134,7 +134,7 @@ jobs:
     name: Assemble changelog
     permissions:
       contents: write
-    uses: tnoff/github-workflows/.github/workflows/assemble-changelog.yml@93f9034849dfd1d98ed72629241a503d29842205  # assemble-changelog-v1.1.0
+    uses: tnoff/github-workflows/.github/workflows/assemble-changelog.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # assemble-changelog-v1.1.1
     secrets:
       app_client_id: ${{ secrets.CI_APP_CLIENT_ID }}
       app_private_key: ${{ secrets.CI_APP_PRIVATE_KEY }}
@@ -144,7 +144,7 @@ jobs:
     needs: assemble-changelog
     permissions:
       contents: write
-    uses: tnoff/github-workflows/.github/workflows/tag.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # tag-v1.0.0
+    uses: tnoff/github-workflows/.github/workflows/tag.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # tag-v1.0.1
     with:
       gate_on_fragments: true
     secrets:
@@ -182,7 +182,7 @@ jobs:
   trigger-bump:
     name: Trigger docker-apps bump
     needs: push-image
-    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # trigger-bump-dispatch-v1.0.0
+    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # trigger-bump-dispatch-v1.0.1
     # Rewrites the pin in docker-apps apps/security-scanner/cronjob.yaml.
     with:
       bump_source: oke-scan
@@ -224,7 +224,7 @@ jobs:
   trigger-bump-secret-age:
     name: Trigger docker-apps bump (secret-age)
     needs: push-image-secret-age
-    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # trigger-bump-dispatch-v1.0.0
+    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # trigger-bump-dispatch-v1.0.1
     # Rewrites the pin in docker-apps apps/security-scanner/secret-age-tracker-cronjob.yaml.
     with:
       bump_source: secret-age-tracker
@@ -261,7 +261,7 @@ jobs:
   trigger-bump-ocir-cleanup:
     name: Trigger docker-apps bump (ocir-cleanup)
     needs: push-image-ocir-cleanup
-    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # trigger-bump-dispatch-v1.0.0
+    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # trigger-bump-dispatch-v1.0.1
     # Rewrites the pin in docker-apps images/kustomization.yaml for the
     # ocir_cleanup image, consumed by
     # apps/security-scanner/ocir-cleanup-cronjob.yaml (renamed from
