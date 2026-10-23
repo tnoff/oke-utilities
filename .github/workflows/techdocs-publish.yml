@@ -8,8 +8,10 @@ name: Publish TechDocs
 # hathor, enheduanna, public-transit, oci-bastion-keepalive,
 # database-backup, and magic-mirror-docker.
 #
-# TECHDOCS_S3_* is a fleet-wide action secret (tnoff/terraform#92) -- no
-# per-repo terraform wiring needed for it.
+# Publishes with a short-lived OCI token from this job's GitHub OIDC identity, not a
+# stored S3 key (tnoff/terraform#217). OCI maps this repo's push to main to the user that
+# may write only its own default/component/ prefix in the TechDocs bucket
+# (terraform-admin techdocs-publishers.tf).
 
 on:
   push:
@@ -26,20 +28,20 @@ concurrency:
 
 # Without this, permissions default to whatever the repo/org falls back to
 # (potentially write-all) instead of being pinned explicitly. This workflow
-# only reads the repo and forwards S3 secrets to the reusable callee, so
-# contents: read covers everything it does.
+# only reads the repo; id-token: write lets the callee mint the OIDC token.
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
     name: Generate and publish
-    uses: tnoff/github-workflows/.github/workflows/techdocs-publish.yml@adea087c43d56fd13d5b1abf2d5f2ba3e695784d  # techdocs-publish-v1.0.0
+    uses: tnoff/github-workflows/.github/workflows/techdocs-publish-oidc.yml@59bd35d1dc06c8de1b74210b4aed7f03862ca1f2  # techdocs-publish-oidc-v1.0.0
     with:
       entity_ref: default/Component/oke-scan
+      techdocs_bucket_name: backstage_techdocs
+      oidc_exchange_domain_url: ${{ vars.OIDC_EXCHANGE_DOMAIN_URL }}
+      oidc_exchange_client_id: ${{ vars.OIDC_EXCHANGE_CLIENT_ID }}
     secrets:
-      techdocs_s3_access_key_id: ${{ secrets.TECHDOCS_S3_ACCESS_KEY_ID }}
-      techdocs_s3_secret_access_key: ${{ secrets.TECHDOCS_S3_SECRET_ACCESS_KEY }}
-      techdocs_s3_bucket_name: ${{ secrets.TECHDOCS_S3_BUCKET_NAME }}
-      techdocs_s3_endpoint: ${{ secrets.TECHDOCS_S3_ENDPOINT }}
-      techdocs_s3_region: ${{ secrets.TECHDOCS_S3_REGION }}
+      oidc_exchange_client_secret: ${{ secrets.OIDC_EXCHANGE_CLIENT_SECRET }}
+      oci_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
