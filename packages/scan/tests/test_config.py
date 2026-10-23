@@ -15,6 +15,8 @@ class TestConfig:
         monkeypatch.setenv("TRIVY_SEVERITY", "CRITICAL,HIGH,MEDIUM")
         monkeypatch.setenv("TRIVY_TIMEOUT", "600")
         monkeypatch.setenv("TRIVY_PLATFORM", "linux/arm64")
+        monkeypatch.setenv("TRIVY_RETRIES", "4")
+        monkeypatch.setenv("TRIVY_RETRY_DELAY", "3")
         monkeypatch.setenv("SCAN_NAMESPACES", "default,kube-system")
         monkeypatch.setenv("EXCLUDE_NAMESPACES", "kube-node-lease")
         monkeypatch.setenv("SCAN_EXTRA_IMAGES", "iad.ocir.io/tnoff/playball:latest, docker.io/library/alpine:3")
@@ -29,6 +31,8 @@ class TestConfig:
         assert config.trivy_severity == "CRITICAL,HIGH,MEDIUM"
         assert config.trivy_timeout == 600
         assert config.trivy_platform == "linux/arm64"
+        assert config.trivy_retries == 4
+        assert config.trivy_retry_delay == 3
         assert config.namespaces == ["default", "kube-system"]
         assert config.exclude_namespaces == ["kube-node-lease"]
         assert config.extra_images == ["iad.ocir.io/tnoff/playball:latest", "docker.io/library/alpine:3"]
@@ -46,6 +50,8 @@ class TestConfig:
         assert config.trivy_severity == "CRITICAL,HIGH"
         assert config.trivy_timeout == 300
         assert config.trivy_platform == ""
+        assert config.trivy_retries == 2
+        assert config.trivy_retry_delay == 10
         assert config.namespaces == []
         assert config.exclude_namespaces == ["kube-system", "kube-public", "kube-node-lease"]
         assert config.extra_images == []

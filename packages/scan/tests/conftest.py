@@ -16,6 +16,8 @@ def base_config():
         trivy_severity="CRITICAL,HIGH",
         trivy_timeout=300,
         trivy_platform="",
+        trivy_retries=2,
+        trivy_retry_delay=0,
         namespaces=[],
         exclude_namespaces=["kube-system", "kube-public"],
         extra_images=[],

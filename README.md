@@ -136,6 +136,8 @@ Kubernetes Secrets.
 | `TRIVY_SEVERITY` | No | `CRITICAL,HIGH` | Vulnerability severities to report |
 | `TRIVY_TIMEOUT` | No | `300` | Scan timeout in seconds |
 | `TRIVY_PLATFORM` | No | (auto) | Target platform for Trivy scans (e.g. `linux/amd64`) |
+| `TRIVY_RETRIES` | No | `2` | Extra attempts when Trivy fails on a transient registry/network read (e.g. `unexpected EOF`); `0` disables |
+| `TRIVY_RETRY_DELAY` | No | `10` | Base seconds to wait between retries (multiplied by the attempt number) |
 | `SCAN_NAMESPACES` | No | (all) | Comma-separated namespaces to scan |
 | `EXCLUDE_NAMESPACES` | No | `kube-system,...` | Namespaces to exclude |
 | `SCAN_EXTRA_IMAGES` | No | `''` | Comma-separated full image references (`registry/ns/repo:tag`) to scan in addition to deployed images, e.g. images published but not run in the cluster. Entries need a tag or digest; a bad entry is logged and counted under "Scans Failed" without aborting the run |

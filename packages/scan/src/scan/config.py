@@ -18,6 +18,9 @@ class Config:
     trivy_severity: str
     trivy_timeout: int
     trivy_platform: str
+    # Extra attempts after the first when Trivy fails on a transient registry/network read
+    trivy_retries: int
+    trivy_retry_delay: int
 
     # Scanning configuration
     namespaces: list[str]
@@ -42,6 +45,8 @@ class Config:
             trivy_severity=os.getenv("TRIVY_SEVERITY", "CRITICAL,HIGH"),
             trivy_timeout=int(os.getenv("TRIVY_TIMEOUT", "300")),
             trivy_platform=os.getenv("TRIVY_PLATFORM", ""),
+            trivy_retries=int(os.getenv("TRIVY_RETRIES", "2")),
+            trivy_retry_delay=int(os.getenv("TRIVY_RETRY_DELAY", "10")),
 
             # Scanning configuration
             namespaces=os.getenv("SCAN_NAMESPACES", "").split(",") if os.getenv("SCAN_NAMESPACES") else [],
