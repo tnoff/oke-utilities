@@ -7,6 +7,7 @@ from json import loads as json_loads
 from pathlib import Path
 import shutil
 import subprocess  # nosec B404
+from time import sleep
 from typing import Optional
 
 from oke_scanner_core.image import Image
@@ -99,6 +100,20 @@ logger = getLogger(__name__)
 # Registry error codes Trivy surfaces when the image reference no longer exists
 IMAGE_GONE_MARKERS = ("MANIFEST_UNKNOWN", "NAME_UNKNOWN")
 
+# Trivy stderr fragments for a layer or manifest read that died mid-transfer. Seen
+# for quay.io blobs as "unable to read the file: unexpected EOF" on one run while the
+# same image scans fine on the next, so these are worth another attempt
+TRANSIENT_MARKERS = (
+    "unexpected EOF",
+    "connection reset by peer",
+    "i/o timeout",
+    "TLS handshake timeout",
+    "TOOMANYREQUESTS",
+    "502 Bad Gateway",
+    "503 Service Unavailable",
+    "504 Gateway Timeout",
+)
+
 
 class ImageNotFoundError(Exception):
     """The image's tag or repository no longer exists in its registry."""
@@ -146,38 +161,48 @@ class TrivyScanner:
     def scan_image(self, image: Image) -> Optional[ScanResult]:
         """Scan a container image for vulnerabilities."""
         logger.info(f'Scanning image {image.full_name}')
+        cmd = [
+            "nice", "-n", "15",
+            "trivy",
+            "image",
+            "--format", "json",
+            "--scanners", "vuln",
+            "--severity", self.cfg.trivy_severity,
+            "--timeout", f"{self.cfg.trivy_timeout}s",
+            "--skip-db-update",
+        ]
+        if self.cfg.trivy_platform:
+            cmd.extend(["--platform", self.cfg.trivy_platform])
+        cmd.append(image.full_name)
+
         try:
-            # Run Trivy scan
-            cmd = [
-                "nice", "-n", "15",
-                "trivy",
-                "image",
-                "--format", "json",
-                "--scanners", "vuln",
-                "--severity", self.cfg.trivy_severity,
-                "--timeout", f"{self.cfg.trivy_timeout}s",
-                "--skip-db-update",
-            ]
-            if self.cfg.trivy_platform:
-                cmd.extend(["--platform", self.cfg.trivy_platform])
-            cmd.append(image.full_name)
-            result = subprocess.run(  # nosec B603
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.cfg.trivy_timeout + 30,
-                check=True,
-            )
-            return self._parse_vulnerabilities(image, json_loads(result.stdout))
+            for attempt in range(1, self.cfg.trivy_retries + 2):
+                try:
+                    result = subprocess.run(  # nosec B603
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=self.cfg.trivy_timeout + 30,
+                        check=True,
+                    )
+                    return self._parse_vulnerabilities(image, json_loads(result.stdout))
+
+                except subprocess.CalledProcessError as e:
+                    stderr = e.stderr or ""
+                    if any(marker in stderr for marker in IMAGE_GONE_MARKERS):
+                        raise ImageNotFoundError(image.full_name) from e
+                    if attempt <= self.cfg.trivy_retries and any(marker in stderr for marker in TRANSIENT_MARKERS):
+                        logger.warning(
+                            f"Image scan attempt {attempt} hit a transient error, retrying: {image.full_name}")
+                        # A partially downloaded layer must not be reused by the next attempt
+                        self._cleanup_image_cache()
+                        sleep(self.cfg.trivy_retry_delay * attempt)
+                        continue
+                    logger.error(f"Image scan failed: {image.full_name} - {stderr}")
+                    return None
 
         except subprocess.TimeoutExpired:
             logger.error(f"Image scan timed out: {image.full_name}")
-            return None
-
-        except subprocess.CalledProcessError as e:
-            if any(marker in (e.stderr or "") for marker in IMAGE_GONE_MARKERS):
-                raise ImageNotFoundError(image.full_name) from e
-            logger.error(f"Image scan failed: {image.full_name} - {e.stderr}")
             return None
 
         except JSONDecodeError as e:

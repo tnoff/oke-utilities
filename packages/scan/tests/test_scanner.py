@@ -471,3 +471,100 @@ class TestImageNotFound:
         mock_run.side_effect = subprocess.CalledProcessError(1, "trivy", stderr=None)
 
         assert scanner.scan_image(Image("iad.ocir.io/tnoff/app:1")) is None
+
+
+class TestTransientRetry:
+    """Transient registry/network read errors are retried; everything else is not."""
+
+    EOF_STDERR = "walk error: unable to read the file: unexpected EOF"
+
+    @pytest.fixture
+    def scanner(self, base_config):
+        """Create a TrivyScanner instance."""
+        with patch('scan.scanner.logger'):
+            return TrivyScanner(base_config)
+
+    @staticmethod
+    def _ok(results):
+        ok = Mock()
+        ok.stdout = json.dumps(results)
+        return ok
+
+    @patch('scan.scanner.sleep')
+    @patch('scan.scanner.subprocess.run')
+    def test_retries_then_succeeds(self, mock_run, mock_sleep, scanner):
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(1, "trivy", stderr=self.EOF_STDERR),
+            self._ok({"Results": []}),
+        ]
+
+        result = scanner.scan_image(Image("quay.io/jetstack/cert-manager-cainjector:v1.20.0"))
+
+        assert result is not None
+        assert mock_run.call_count == 2
+        mock_sleep.assert_called_once_with(0)
+
+    @patch('scan.scanner.sleep')
+    @patch('scan.scanner.subprocess.run')
+    def test_gives_up_after_configured_retries(self, mock_run, mock_sleep, scanner):
+        mock_run.side_effect = subprocess.CalledProcessError(1, "trivy", stderr=self.EOF_STDERR)
+
+        assert scanner.scan_image(Image("quay.io/jetstack/cert-manager-cainjector:v1.20.0")) is None
+        assert mock_run.call_count == 3  # first attempt + trivy_retries (2)
+        assert mock_sleep.call_count == 2
+
+    @patch('scan.scanner.sleep')
+    @patch('scan.scanner.subprocess.run')
+    def test_backoff_grows_with_attempt(self, mock_run, mock_sleep, base_config):
+        base_config.trivy_retry_delay = 10
+        with patch('scan.scanner.logger'):
+            scanner = TrivyScanner(base_config)
+        mock_run.side_effect = subprocess.CalledProcessError(1, "trivy", stderr=self.EOF_STDERR)
+
+        scanner.scan_image(Image("quay.io/jetstack/cert-manager-cainjector:v1.20.0"))
+
+        assert [c.args[0] for c in mock_sleep.call_args_list] == [10, 20]
+
+    @patch('scan.scanner.sleep')
+    @patch('scan.scanner.subprocess.run')
+    def test_retries_disabled(self, mock_run, mock_sleep, base_config):
+        base_config.trivy_retries = 0
+        with patch('scan.scanner.logger'):
+            scanner = TrivyScanner(base_config)
+        mock_run.side_effect = subprocess.CalledProcessError(1, "trivy", stderr=self.EOF_STDERR)
+
+        assert scanner.scan_image(Image("quay.io/jetstack/cert-manager-cainjector:v1.20.0")) is None
+        assert mock_run.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch('scan.scanner.sleep')
+    @patch('scan.scanner.subprocess.run')
+    def test_non_transient_error_is_not_retried(self, mock_run, mock_sleep, scanner):
+        mock_run.side_effect = subprocess.CalledProcessError(1, "trivy", stderr="FATAL: bad config")
+
+        assert scanner.scan_image(Image("iad.ocir.io/tnoff/app:1")) is None
+        assert mock_run.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch('scan.scanner.sleep')
+    @patch('scan.scanner.subprocess.run')
+    def test_image_gone_is_not_retried(self, mock_run, mock_sleep, scanner):
+        mock_run.side_effect = subprocess.CalledProcessError(
+            1, "trivy", stderr="MANIFEST_UNKNOWN ... unexpected EOF")
+
+        with pytest.raises(ImageNotFoundError):
+            scanner.scan_image(Image("iad.ocir.io/tnoff/app:gone"))
+        assert mock_run.call_count == 1
+
+    @patch('scan.scanner.sleep')
+    @patch('scan.scanner.subprocess.run')
+    def test_cache_cleaned_between_attempts(self, mock_run, mock_sleep, scanner):
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(1, "trivy", stderr=self.EOF_STDERR),
+            self._ok({"Results": []}),
+        ]
+
+        with patch.object(scanner, '_cleanup_image_cache') as cleanup:
+            scanner.scan_image(Image("quay.io/jetstack/cert-manager-cainjector:v1.20.0"))
+
+        assert cleanup.call_count == 2  # once before the retry, once in finally
