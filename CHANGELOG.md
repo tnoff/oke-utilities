@@ -5,6 +5,12 @@ All notable changes to the OKE Security Scanner will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.6] - 2026-10-23
+
+### Changed
+
+- scan now retries Trivy when a registry/network read fails mid-transfer (e.g. `unexpected EOF` pulling quay.io layers), up to `TRIVY_RETRIES` extra attempts (default 2, `TRIVY_RETRY_DELAY` backoff, Trivy cache cleared between attempts), instead of failing the whole Job on one truncated download
+
 ## [0.10.5] - 2026-10-22
 
 ### Changed

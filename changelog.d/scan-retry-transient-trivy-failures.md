@@ -1,1 +1,0 @@
-scan now retries Trivy when a registry/network read fails mid-transfer (e.g. `unexpected EOF` pulling quay.io layers), up to `TRIVY_RETRIES` extra attempts (default 2, `TRIVY_RETRY_DELAY` backoff, Trivy cache cleared between attempts), instead of failing the whole Job on one truncated download
