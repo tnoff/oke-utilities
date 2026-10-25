@@ -5,6 +5,12 @@ All notable changes to the OKE Security Scanner will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.7] - 2026-10-25
+
+### Changed
+
+- audit-watch no longer flags `UNEXPECTED_WRITE` for the OKE control plane: at startup it reads the API server addresses from the `kubernetes` EndpointSlice in `default` (needs the Role and token mount in docker-apps) and exempts writes from those addresses, so `AttachVolume`/`DetachVolume` during a PVC pod rollout no longer fire Audit Watch Flagged. A refusal (`DENIED`) from them still warns, and a failed lookup warns and carries on with no exemption
+
 ## [0.10.6] - 2026-10-23
 
 ### Changed
