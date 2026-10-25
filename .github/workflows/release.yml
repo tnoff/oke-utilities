@@ -274,10 +274,7 @@ jobs:
       app_client_id: ${{ secrets.CI_APP_CLIENT_ID }}
       app_private_key: ${{ secrets.CI_APP_PRIVATE_KEY }}
 
-  # Push only for now: the docker-apps pin for this image does not exist yet, and the
-  # bump workflow rewrites an existing pin. Once the first image is pushed and pinned in
-  # docker-apps (images/kustomization.yaml), a follow-up adds the trigger-bump job
-  # (bump_source: jwks-publisher, already mapped in docker-apps' bump-image-pin.yml).
+  # Pin: images/kustomization.yaml (iad.ocir.io/tnoff/jwks_publisher), bumped by the job below.
   push-image-jwks-publisher:
     name: Push jwks-publisher image
     needs: changes
@@ -302,10 +299,20 @@ jobs:
       oidc_exchange_client_secret: ${{ secrets.OIDC_EXCHANGE_CLIENT_SECRET }}
       oci_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
-  # Push only for now: the docker-apps pin for this image does not exist yet, and the
-  # bump workflow rewrites an existing pin. Once the first image is pushed and pinned in
-  # docker-apps (images/kustomization.yaml), a follow-up adds the trigger-bump job
-  # (bump_source: rpst-sidecar, which docker-apps' bump-image-pin.yml must map first).
+  trigger-bump-jwks-publisher:
+    name: Trigger docker-apps bump (jwks-publisher)
+    needs: push-image-jwks-publisher
+    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # trigger-bump-dispatch-v1.0.1
+    # Rewrites the jwks_publisher pin in docker-apps images/kustomization.yaml (apps/jwks-publisher).
+    with:
+      bump_source: jwks-publisher
+      image: ${{ needs.push-image-jwks-publisher.outputs.image }}
+      image_tag: ${{ needs.push-image-jwks-publisher.outputs.secondary_tag }}
+    secrets:
+      app_client_id: ${{ secrets.CI_APP_CLIENT_ID }}
+      app_private_key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+  # Pin: images/kustomization.yaml (iad.ocir.io/tnoff/rpst_sidecar), bumped by the job below.
   push-image-rpst-sidecar:
     name: Push rpst-sidecar image
     needs: changes
@@ -330,7 +337,20 @@ jobs:
       oidc_exchange_client_secret: ${{ secrets.OIDC_EXCHANGE_CLIENT_SECRET }}
       oci_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
-  # Push only for now, like rpst-sidecar: no docker-apps pin exists yet.
+  trigger-bump-rpst-sidecar:
+    name: Trigger docker-apps bump (rpst-sidecar)
+    needs: push-image-rpst-sidecar
+    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # trigger-bump-dispatch-v1.0.1
+    # Rewrites the rpst_sidecar pin in docker-apps images/kustomization.yaml, shared by every pod with an rpst sidecar.
+    with:
+      bump_source: rpst-sidecar
+      image: ${{ needs.push-image-rpst-sidecar.outputs.image }}
+      image_tag: ${{ needs.push-image-rpst-sidecar.outputs.secondary_tag }}
+    secrets:
+      app_client_id: ${{ secrets.CI_APP_CLIENT_ID }}
+      app_private_key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+  # Pin: images/kustomization.yaml (iad.ocir.io/tnoff/audit_watch), bumped by the job below.
   push-image-audit-watch:
     name: Push audit-watch image
     needs: changes
@@ -354,3 +374,17 @@ jobs:
     secrets:
       oidc_exchange_client_secret: ${{ secrets.OIDC_EXCHANGE_CLIENT_SECRET }}
       oci_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+
+  trigger-bump-audit-watch:
+    name: Trigger docker-apps bump (audit-watch)
+    needs: push-image-audit-watch
+    uses: tnoff/github-workflows/.github/workflows/trigger-bump-dispatch.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # trigger-bump-dispatch-v1.0.1
+    # Rewrites the audit_watch pin in docker-apps images/kustomization.yaml (monitoring/audit-watch). docker-apps'
+    # bump-image-pin.yml must map the `audit-watch` source first, or the dispatch fails there.
+    with:
+      bump_source: audit-watch
+      image: ${{ needs.push-image-audit-watch.outputs.image }}
+      image_tag: ${{ needs.push-image-audit-watch.outputs.secondary_tag }}
+    secrets:
+      app_client_id: ${{ secrets.CI_APP_CLIENT_ID }}
+      app_private_key: ${{ secrets.CI_APP_PRIVATE_KEY }}
