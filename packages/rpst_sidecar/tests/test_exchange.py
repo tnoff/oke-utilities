@@ -90,10 +90,30 @@ def test_missing_input_file(cfg, key):
 
 
 def test_http_error_reports_status_and_truncated_body(cfg, key):
-    with mock.patch.object(ex, "urlopen", side_effect=http_error(400, "x" * 500)):
+    with mock.patch.object(ex, "urlopen", side_effect=http_error(400, "x" * 3000)):
         with pytest.raises(ExchangeError) as info:
             ex.exchange(cfg, key)
-    assert str(info.value) == "HTTP 400: " + "x" * 200
+    assert str(info.value) == "HTTP 400: " + "x" * ex.HTTP_ERROR_BODY_CHARS
+
+
+def test_http_error_keeps_the_ecid_past_200_characters(cfg, key):
+    body = (
+        '{"error":"unauthorized_client","error_description":"Error during GET signing certificate : '
+        'https://objectstorage.us-sanjose-1.oraclecloud.com/n/tnoff/b/k8s_oidc_jwks/o/jwks.jsonRead timed out",'
+        '"ecid":"0123456789abcdef-0001"}'
+    )
+    assert len(body) > ex.ERROR_BODY_CHARS
+    with mock.patch.object(ex, "urlopen", side_effect=http_error(401, body)):
+        with pytest.raises(ExchangeError) as info:
+            ex.exchange(cfg, key)
+    assert str(info.value) == "HTTP 401: " + body
+
+
+def test_success_status_body_keeps_the_short_cap(cfg, key):
+    with mock.patch.object(ex, "urlopen", return_value=FakeResponse("t" * 500, status=202)):
+        with pytest.raises(ExchangeError) as info:
+            ex.exchange(cfg, key)
+    assert str(info.value) == "HTTP 202: " + "t" * ex.ERROR_BODY_CHARS
 
 
 def test_error_body_is_redacted(cfg, key):

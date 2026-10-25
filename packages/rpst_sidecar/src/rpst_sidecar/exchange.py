@@ -20,6 +20,10 @@ logger = getLogger(__name__)
 GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange"
 REQUESTED_TOKEN_TYPE = "urn:oci:token-type:oci-rpst"  # nosec B105 - a token type URN, not a credential
 ERROR_BODY_CHARS = 200
+# An HTTP error status carries the identity domain's error JSON, which ends in the `ecid` OCI support asks
+# for; 200 chars cut it off (2026-10-25 JWKS read timeout). Only this path gets the longer cap: a 2xx that is
+# not 200 could carry an issued token, and the short cap keeps most of one out of the log.
+HTTP_ERROR_BODY_CHARS = 2000
 
 
 class ExchangeError(Exception):
@@ -76,12 +80,12 @@ def read_secret_file(path: Path) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
-def redact(text: str, secrets: tuple[str, ...]) -> str:
-    """The first ERROR_BODY_CHARS of `text`, with any credential that was echoed back removed."""
+def redact(text: str, secrets: tuple[str, ...], limit: int = ERROR_BODY_CHARS) -> str:
+    """The first `limit` characters of `text`, with any credential that was echoed back removed."""
     for secret in secrets:
         if secret:
             text = text.replace(secret, "[redacted]")
-    return text[:ERROR_BODY_CHARS]
+    return text[:limit]
 
 
 def exchange(cfg: RpstConfig, key: rsa.RSAPrivateKey) -> tuple[str, str]:
@@ -125,7 +129,7 @@ def exchange(cfg: RpstConfig, key: rsa.RSAPrivateKey) -> tuple[str, str]:
             status = response.status
             body = response.read()
     except urllib.error.HTTPError as exc:
-        detail = redact(exc.read().decode("utf-8", "replace"), secrets)
+        detail = redact(exc.read().decode("utf-8", "replace"), secrets, HTTP_ERROR_BODY_CHARS)
         raise ExchangeError(f"HTTP {exc.code}: {detail}") from exc
     except OSError as exc:
         # URLError and timeouts are OSErrors.

@@ -270,8 +270,8 @@ same directory, fsync, rename):
   crypto padding" otherwise).
 
 Failures never stop the sidecar: each exchange failure logs a WARNING with the
-HTTP status and the first 200 characters of the error body (never the client
-secret, ServiceAccount token or RPST) and retries with exponential backoff and
+HTTP status and the first 2000 characters of the error body (never the client
+secret, ServiceAccount token or RPST), which keeps the `ecid` OCI support needs and retries with exponential backoff and
 jitter, 2s doubling to a 120s cap. This includes startup: exchanges can fail
 for around ten minutes after policy or IAM changes. Every successful exchange
 logs one audit line (`jti`, the ServiceAccount token's `sub`, namespace, pod,

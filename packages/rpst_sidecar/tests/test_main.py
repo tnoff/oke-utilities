@@ -246,7 +246,9 @@ def test_failure_warning_has_status_and_body_but_no_secrets(sidecar, caplog):
     assert len(warnings) == 1
     text = warnings[0].getMessage()
     assert "HTTP 403" in text and "denied" in text
-    assert len(text) < 400
+    # The secrets sit inside the (now 2000 char) cap, so this is a redaction check, not a truncation one.
+    assert "[redacted]" in text
+    assert len(text) < 700
     for secret in ("the-client-secret", SA_TOKEN, "Basic "):
         assert secret not in caplog.text
 
