@@ -32,3 +32,16 @@ def test_known_write_is_quiet():
 
 def test_denied_write_has_both_flags():
     assert flags("DeleteBucket", "404", KNOWN) == [DENIED, UNEXPECTED_WRITE]
+
+
+def test_control_plane_writes_are_never_unexpected():
+    assert flags("AttachVolume", "200", KNOWN, control_plane=True) == []
+    assert flags("SomethingNobodyListed", "202", KNOWN, control_plane=True) == []
+
+
+def test_control_plane_refusals_still_count():
+    assert flags("AttachVolume", "404", KNOWN, control_plane=True) == [DENIED]
+
+
+def test_same_write_from_elsewhere_is_still_unexpected():
+    assert flags("AttachVolume", "200", KNOWN, control_plane=False) == [UNEXPECTED_WRITE]

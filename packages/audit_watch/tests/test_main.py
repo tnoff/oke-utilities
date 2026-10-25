@@ -14,10 +14,10 @@ from audit_watch.config import WatchConfig
 from conftest import NOW, TENANCY, FakeAudit, FakeIdentity, Failing, event
 
 
-def run(cfg, by_compartment, comps=("c1",)):
+def run(cfg, by_compartment, comps=("c1",), control_plane=frozenset()):
     """Run one pass over fake clients and return (exit code, audit fake)."""
     audit = FakeAudit(by_compartment)
-    return m.run(cfg, audit, FakeIdentity(comps), TENANCY, now=NOW), audit
+    return m.run(cfg, audit, FakeIdentity(comps), TENANCY, now=NOW, control_plane=control_plane), audit
 
 
 def test_span_ends_after_the_lag_and_covers_the_window(cfg):
@@ -57,6 +57,29 @@ def test_unexpected_write_warns_and_known_write_does_not(cfg, caplog):
         run(cfg, {"c1": events})
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1 and "UNEXPECTED_WRITE event=DeleteBucket" in warnings[0]
+
+
+def test_control_plane_writes_are_quiet_but_the_same_write_elsewhere_warns(cfg, caplog):
+    events = [event("AttachVolume", ip="10.0.0.10"), event("AttachVolume", ip="10.0.119.14")]
+    with caplog.at_level(logging.INFO):
+        assert run(cfg, {"c1": events}, control_plane=frozenset({"10.0.0.10"}))[0] == 0
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings == ["audit-watch UNEXPECTED_WRITE event=AttachVolume status=200 count=1 ips=10.0.119.14 type=com.oraclecloud.x"]
+    assert "seen event=AttachVolume status=200 count=1 ips=10.0.0.10" in caplog.text
+    assert "flagged=1" in caplog.text
+
+
+def test_control_plane_refusal_still_warns(cfg, caplog):
+    with caplog.at_level(logging.INFO):
+        run(cfg, {"c1": [event("AttachVolume", status="404", ip="10.0.0.10")]}, control_plane=frozenset({"10.0.0.10"}))
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings == ["audit-watch DENIED event=AttachVolume status=404 count=1 ips=10.0.0.10 type=com.oraclecloud.x"]
+
+
+def test_without_the_addresses_nothing_is_exempt(cfg, caplog):
+    with caplog.at_level(logging.INFO):
+        run(cfg, {"c1": [event("AttachVolume", ip="10.0.0.10")]})
+    assert "UNEXPECTED_WRITE event=AttachVolume" in caplog.text
 
 
 def test_ips_are_collected_per_group(cfg, caplog):
@@ -108,14 +131,30 @@ def test_main_signer_failure(monkeypatch, caplog):
     assert "resource principal signer" in caplog.text
 
 
-def test_main_builds_clients_from_the_signer(monkeypatch):
+def test_main_builds_clients_from_the_signer(monkeypatch, caplog):
     monkeypatch.delenv("WINDOW_MINUTES", raising=False)
     signer = SimpleNamespace(region="us-sanjose-1", tenancy_id=TENANCY)
     with mock.patch.object(m.oci.auth.signers, "get_resource_principals_signer", return_value=signer), \
             mock.patch.object(m.oci.audit, "AuditClient") as audit, \
             mock.patch.object(m.oci.identity, "IdentityClient") as identity, \
-            mock.patch.object(m, "run", return_value=0) as run_:
+            mock.patch.object(m, "api_server_ips", return_value=frozenset({"10.0.0.11", "10.0.0.10"})), \
+            mock.patch.object(m, "run", return_value=0) as run_, \
+            caplog.at_level(logging.INFO):
         assert m.main([]) == 0
+    assert run_.call_args.kwargs == {"control_plane": frozenset({"10.0.0.10", "10.0.0.11"})}
+    assert "control plane ips=10.0.0.10,10.0.0.11" in caplog.text
     audit.assert_called_once_with({"region": "us-sanjose-1"}, signer=signer)
     identity.assert_called_once_with({"region": "us-sanjose-1"}, signer=signer)
     assert run_.call_args.args[0] == WatchConfig() and run_.call_args.args[3] == TENANCY
+
+
+def test_main_carries_on_without_the_api_server_addresses(monkeypatch, caplog):
+    monkeypatch.delenv("WINDOW_MINUTES", raising=False)
+    signer = SimpleNamespace(region="us-sanjose-1", tenancy_id=TENANCY)
+    with mock.patch.object(m.oci.auth.signers, "get_resource_principals_signer", return_value=signer), \
+            mock.patch.object(m.oci.audit, "AuditClient"), mock.patch.object(m.oci.identity, "IdentityClient"), \
+            mock.patch.object(m, "api_server_ips", side_effect=m.ControlPlaneError("HTTP 403")), \
+            mock.patch.object(m, "run", return_value=0) as run_:
+        assert m.main([]) == 0
+    assert run_.call_args.kwargs == {"control_plane": frozenset()}
+    assert "Cannot read the API server addresses (HTTP 403); control plane writes will be flagged" in caplog.text

@@ -27,6 +27,7 @@ import oci
 
 from .classify import flags
 from .config import ConfigError, WatchConfig
+from .control_plane import ControlPlaneError, api_server_ips
 
 logger = getLogger(__name__)
 
@@ -62,8 +63,14 @@ def resource_events(audit, compartment_id: str, start: datetime, end: datetime):
         )
 
 
-def run(cfg: WatchConfig, audit, identity, tenancy_id: str, now: Optional[datetime] = None) -> int:
-    """Audit one span. Returns 0 when it was audited, 1 when it could not be."""
+def run(
+    cfg: WatchConfig, audit, identity, tenancy_id: str, now: Optional[datetime] = None, control_plane: frozenset = frozenset()
+) -> int:
+    """Audit one span. Returns 0 when it was audited, 1 when it could not be.
+
+    `control_plane` is the set of API server addresses: events from them are the cluster operating
+    itself, so they are grouped apart and their writes are not flagged (their refusals still are).
+    """
     end = (now or datetime.now(timezone.utc)) - timedelta(minutes=cfg.lag_minutes)
     start = end - timedelta(minutes=cfg.window_minutes)
 
@@ -80,16 +87,18 @@ def run(cfg: WatchConfig, audit, identity, tenancy_id: str, now: Optional[dateti
         try:
             for name, status, ip, event_type in resource_events(audit, comp, start, end):
                 total += 1
-                groups[(name, status, event_type)] += 1
-                sources[(name, status, event_type)].add(ip)
+                key = (name, status, event_type, ip in control_plane)
+                groups[key] += 1
+                sources[key].add(ip)
         except oci.exceptions.ServiceError as exc:
             logger.error("Cannot list audit events for a compartment: %s %s", exc.status, exc.message)
             return 1
 
     flagged = 0
-    for (name, status, event_type), count in sorted(groups.items()):
-        ips = ",".join(sorted(sources[(name, status, event_type)]))
-        reasons = flags(name, status, cfg.known_writes)
+    for key, count in sorted(groups.items()):
+        name, status, event_type, from_control_plane = key
+        ips = ",".join(sorted(sources[key]))
+        reasons = flags(name, status, cfg.known_writes, from_control_plane)
         if reasons:
             flagged += count
             logger.warning(
@@ -124,10 +133,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     except Exception as exc:  # pylint: disable=broad-exception-caught
         logger.error("Cannot build the resource principal signer: %s", exc)
         return 1
+    try:
+        control_plane = api_server_ips()
+        logger.info("audit-watch control plane ips=%s", ",".join(sorted(control_plane)))
+    except ControlPlaneError as exc:
+        # Not fatal: without the addresses the control plane's writes are flagged like any other, which
+        # is noisy but never hides an event.
+        logger.warning("Cannot read the API server addresses (%s); control plane writes will be flagged", exc)
+        control_plane = frozenset()
     client_config = {"region": signer.region}
     audit = oci.audit.AuditClient(client_config, signer=signer)
     identity = oci.identity.IdentityClient(client_config, signer=signer)
-    return run(cfg, audit, identity, signer.tenancy_id)
+    return run(cfg, audit, identity, signer.tenancy_id, control_plane=control_plane)
 
 
 if __name__ == "__main__":  # pragma: no cover

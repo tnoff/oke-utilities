@@ -358,7 +358,7 @@ from tnoff/terraform#191 and OCI's own services such as the OKE cloud controller
   may not make with 404 `NotAuthorizedOrNotFound`, and such calls are logged;
 - `audit-watch UNEXPECTED_WRITE ...` at WARNING for any operation that is not a read
   (`Get`, `List`, `Summarize`, `Search`, `Inspect`, `Read`, `Describe`) and not in
-  `KNOWN_WRITE_EVENTS`;
+  `KNOWN_WRITE_EVENTS`, unless it came from the cluster's own API server (below);
 - a `summary` line with the span, compartment count, event count and flagged count.
 
 Grafana alerts on the two WARNING kinds (docker-apps `monitoring/grafana/rules.yaml`).
@@ -368,9 +368,22 @@ principal id, so a call cannot be tied to a ServiceAccount, only to its source I
 federated workload being refused or doing something unexpected, not which one. It never reads
 `identity.credentials` (write events carry a live token there) and logs no credential data.
 
+**The control plane is not a workload.** OKE's control plane is a resource principal too: it
+attaches and detaches volumes whenever a pod with a PVC moves, so every rollout of such a pod
+used to flag `AttachVolume`/`DetachVolume`. Its calls come from the API server's address, so at
+startup the watcher reads the `kubernetes` EndpointSlice in the `default` namespace (a Role in
+docker-apps `monitoring/audit-watch/rbac.yaml` allows `list` on `endpointslices` there, and the
+pod mounts the ServiceAccount token for it) and logs `audit-watch control plane ips=...`. Events
+from those addresses never get `UNEXPECTED_WRITE`, whatever the operation is called; a refusal
+(`DENIED`) from them still warns, since it means the control plane lost a permission. If the
+addresses cannot be read the watcher warns (`Cannot read the API server addresses ...`) and
+carries on with none, so the control plane's writes are flagged like anyone else's: noisy, never
+hidden.
+
 **Auth.** A resource principal itself, through the same sidecar as any federated workload. Its
 policy (`read audit-events in tenancy`) is in tnoff/terraform `oci/oci.tf` (`k8s_workloads`).
-The compartments are discovered with `list_compartments` on the tenancy.
+The compartments are discovered with `list_compartments` on the tenancy. The Kubernetes API is
+used for the one read above and nothing else.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
