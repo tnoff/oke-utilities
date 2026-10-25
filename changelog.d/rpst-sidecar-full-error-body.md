@@ -1,1 +1,0 @@
-rpst-sidecar keeps up to 2000 characters of the identity domain's error JSON when an exchange gets an HTTP error status (was 200), so the `ecid` OCI support needs to trace a failed request survives in the log; a non-200 success body keeps the short cap
