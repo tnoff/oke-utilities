@@ -16,11 +16,16 @@ def is_read(event_name: str) -> bool:
     return event_name.startswith(READ_PREFIXES)
 
 
-def flags(event_name: str, status: str, known_writes) -> list[str]:
-    """Why this event is worth a look, or an empty list for ordinary traffic."""
+def flags(event_name: str, status: str, known_writes, control_plane: bool = False) -> list[str]:
+    """Why this event is worth a look, or an empty list for ordinary traffic.
+
+    `control_plane` is True for events from the cluster's own API server addresses: OKE operating the
+    cluster (attaching a volume when a pod moves, say), whatever the operation is called, so its writes
+    are never unexpected. A refusal still is: it means the control plane lost a permission.
+    """
     found = []
     if status in DENIED_STATUSES:
         found.append(DENIED)
-    if not is_read(event_name) and event_name not in known_writes:
+    if not control_plane and not is_read(event_name) and event_name not in known_writes:
         found.append(UNEXPECTED_WRITE)
     return found
