@@ -164,7 +164,7 @@ Properties:
 Key methods:
 - `_get_ocir_images_via_sdk(image)` — lists all images in an OCIR repo via `oci.artifacts.ArtifactsClient.list_container_images` (paginated). Cached per repo.
 - `_find_repository_compartment(repo)` — searches all accessible compartments for a repo; results cached.
-- `_get_docker_auth(image)` — reads `~/.docker/config.json`, handles Basic-vs-Bearer token exchange against the registry's `/v2/` endpoint. Used only for fetching manifest lists.
+- `_get_docker_auth(image)` — reads `~/.docker/config.json` when present, handles Basic-vs-Bearer token exchange against the registry's `/v2/` endpoint, and with no config or no entry for the registry asks for an anonymous Bearer token (public repositories grant one). Returns `{}` when the registry needs no auth and `None` only when access is refused, so callers test `is None`, not truthiness: with no auth the sub-manifest digests of kept multi-arch tags would go unprotected and cleanup could delete them. Used only for fetching manifest lists.
 - `_get_manifest_list_sub_digests(image)` — fetches a manifest list (multi-arch index) via Docker V2 API to enumerate sub-manifest digests; used to protect referenced platform manifests during cleanup.
 - `get_old_ocir_images(images, keep_count, extra_repositories)` — returns `CleanupRecommendation`s of old commit-hash tags eligible for deletion, while preserving the deployed tag, `latest`, the newest `keep_count` tags, and any sub-manifests of kept tags.
 - `get_orphaned_manifests(images, extra_repositories)` — finds `unknown@sha256:...` platform manifests no longer referenced by any tagged manifest list.

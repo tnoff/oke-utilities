@@ -1,0 +1,1 @@
+ocir-cleanup no longer needs a Docker config: with none (or no entry for the registry) it requests an anonymous registry token, so it still protects the sub-manifests of kept multi-arch images once the OCIR repositories are public; before, a missing config silently left them unprotected

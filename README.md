@@ -98,9 +98,9 @@ credentials below are a separate auth token and are unaffected.
 
 ### Docker Registry (`~/.docker/config.json`)
 
-Docker credentials from `~/.docker/config.json` are used in two places, each in its own image:
-- **Trivy** (security scanner) uses them to pull images for vulnerability scanning.
-- **Image Cleanup** (`packages/ocir_cleanup`) uses them to fetch manifests via the Docker V2 API. When a kept image is a manifest list (multi-arch), it reads its sub-manifests and protects them from deletion, preventing "manifest unknown" pull errors in the cluster.
+Docker credentials from `~/.docker/config.json` are optional when the repositories are public (OCIR pulls them anonymously). Where present they are used in two places, each in its own image:
+- **Trivy** (security scanner) uses them to pull images for vulnerability scanning; without them it pulls anonymously.
+- **Image Cleanup** (`packages/ocir_cleanup`) uses them to fetch manifests via the Docker V2 API; without them it asks the registry for an anonymous token, which public repositories grant. When a kept image is a manifest list (multi-arch), it reads its sub-manifests and protects them from deletion, preventing "manifest unknown" pull errors in the cluster.
 
 ## Cache Management
 
