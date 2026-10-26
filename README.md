@@ -359,6 +359,11 @@ from tnoff/terraform#191 and OCI's own services such as the OKE cloud controller
 - `audit-watch UNEXPECTED_WRITE ...` at WARNING for any operation that is not a read
   (`Get`, `List`, `Summarize`, `Search`, `Inspect`, `Read`, `Describe`) and not in
   `KNOWN_WRITE_EVENTS`, unless it came from the cluster's own API server (below);
+- for each flagged group, up to three `audit-watch detail ...` WARNING lines naming what made the
+  call: the service that logged it (`source`), the client's `agent`, the `request` action and path,
+  and the `resource`. They exist because an event with no name (`event=unknown`) is otherwise just
+  an IP address. They do not match the Grafana rule, which keys on `audit-watch DENIED` and
+  `audit-watch UNEXPECTED_WRITE`. Request headers and parameters are never read;
 - a `summary` line with the span, compartment count, event count and flagged count.
 
 Grafana alerts on the two WARNING kinds (docker-apps `monitoring/grafana/rules.yaml`).
