@@ -1304,36 +1304,111 @@ class TestRegistryClient:
         token_call = mock_get.call_args_list[1]
         assert token_call[1]['params']['scope'] == 'repository:tnoff/myapp:pull'
 
+    @patch('ocir_cleanup.registry_client.requests.get')
     @patch('builtins.open', side_effect=FileNotFoundError)
     @patch('ocir_cleanup.registry_client.oci')
-    def test_get_docker_auth_missing_config(self, mock_oci, mock_file, config):
-        """Test _get_docker_auth returns None when config file is missing."""
+    def test_get_docker_auth_missing_config_anonymous_token(self, mock_oci, mock_file, mock_get, config):
+        """Test _get_docker_auth asks for an anonymous token when the config file is missing."""
         mock_oci.config.from_file.return_value = {'tenancy': 'ocid1.tenancy.test'}
         mock_oci.artifacts.ArtifactsClient.return_value = Mock()
         mock_oci.identity.IdentityClient.return_value = Mock()
         mock_oci.object_storage.ObjectStorageClient.return_value = Mock()
 
+        mock_v2_resp = Mock()
+        mock_v2_resp.status_code = 401
+        mock_v2_resp.headers = {
+            'WWW-Authenticate': 'Bearer realm="https://iad.ocir.io/20180419/docker/token",service="iad.ocir.io",scope=""'
+        }
+        mock_token_resp = Mock()
+        mock_token_resp.ok = True
+        mock_token_resp.json.return_value = {'token': 'anon-token'}
+        mock_get.side_effect = [mock_v2_resp, mock_token_resp]
+
         client = RegistryClient(config)
         image = Image('iad.ocir.io/tnoff/myapp:v1.0.0')
         result = client._get_docker_auth(image)
 
-        assert result is None
+        assert result == {'Authorization': 'Bearer anon-token'}
+        # No Basic credential is sent on either request
+        assert mock_get.call_args_list[0][1]['headers'] == {}
+        assert mock_get.call_args_list[1][1]['headers'] == {}
 
+    @patch('ocir_cleanup.registry_client.requests.get')
     @patch('builtins.open', new_callable=mock_open,
            read_data=json.dumps({'auths': {'other.registry.io': {'auth': 'dXNlcjpwYXNz'}}}))
     @patch('ocir_cleanup.registry_client.oci')
-    def test_get_docker_auth_no_entry_for_registry(self, mock_oci, mock_file, config):
-        """Test _get_docker_auth returns None when no entry for the registry."""
+    def test_get_docker_auth_no_entry_for_registry_anonymous_open(self, mock_oci, mock_file, mock_get, config):
+        """Test _get_docker_auth returns empty headers when there is no entry and the registry needs none."""
         mock_oci.config.from_file.return_value = {'tenancy': 'ocid1.tenancy.test'}
         mock_oci.artifacts.ArtifactsClient.return_value = Mock()
         mock_oci.identity.IdentityClient.return_value = Mock()
         mock_oci.object_storage.ObjectStorageClient.return_value = Mock()
 
+        mock_v2_resp = Mock()
+        mock_v2_resp.status_code = 200
+        mock_get.return_value = mock_v2_resp
+
         client = RegistryClient(config)
         image = Image('iad.ocir.io/tnoff/myapp:v1.0.0')
         result = client._get_docker_auth(image)
 
-        assert result is None
+        assert result == {}
+        assert mock_get.call_args[1]['headers'] == {}
+
+    @patch('ocir_cleanup.registry_client.requests.get')
+    @patch('builtins.open', side_effect=FileNotFoundError)
+    @patch('ocir_cleanup.registry_client.oci')
+    def test_get_docker_auth_anonymous_denied(self, mock_oci, mock_file, mock_get, config):
+        """Test _get_docker_auth returns None when anonymous access is refused."""
+        mock_oci.config.from_file.return_value = {'tenancy': 'ocid1.tenancy.test'}
+        mock_oci.artifacts.ArtifactsClient.return_value = Mock()
+        mock_oci.identity.IdentityClient.return_value = Mock()
+        mock_oci.object_storage.ObjectStorageClient.return_value = Mock()
+
+        mock_v2_resp = Mock()
+        mock_v2_resp.status_code = 401
+        mock_v2_resp.headers = {
+            'WWW-Authenticate': 'Bearer realm="https://iad.ocir.io/20180419/docker/token",service="iad.ocir.io",scope=""'
+        }
+        mock_token_resp = Mock()
+        mock_token_resp.ok = False
+        mock_get.side_effect = [mock_v2_resp, mock_token_resp]
+
+        client = RegistryClient(config)
+        image = Image('iad.ocir.io/tnoff/myapp:v1.0.0')
+
+        assert client._get_docker_auth(image) is None
+
+    @patch('ocir_cleanup.registry_client.requests.get')
+    @patch('builtins.open', side_effect=FileNotFoundError)
+    @patch('ocir_cleanup.registry_client.oci')
+    def test_get_manifest_list_sub_digests_anonymous(self, mock_oci, mock_file, mock_get, config):
+        """Test sub-digests are still protected with no Docker config (anonymous token)."""
+        mock_oci.config.from_file.return_value = {'tenancy': 'ocid1.tenancy.test'}
+        mock_oci.artifacts.ArtifactsClient.return_value = Mock()
+        mock_oci.identity.IdentityClient.return_value = Mock()
+        mock_oci.object_storage.ObjectStorageClient.return_value = Mock()
+
+        mock_v2_resp = Mock()
+        mock_v2_resp.status_code = 401
+        mock_v2_resp.headers = {
+            'WWW-Authenticate': 'Bearer realm="https://iad.ocir.io/20180419/docker/token",service="iad.ocir.io",scope=""'
+        }
+        mock_token_resp = Mock()
+        mock_token_resp.ok = True
+        mock_token_resp.json.return_value = {'token': 'anon-token'}
+        mock_manifest_resp = Mock()
+        mock_manifest_resp.json.return_value = {
+            'mediaType': 'application/vnd.oci.image.index.v1+json',
+            'manifests': [{'digest': 'sha256:child1'}, {'digest': 'sha256:child2'}],
+        }
+        mock_get.side_effect = [mock_v2_resp, mock_token_resp, mock_manifest_resp]
+
+        client = RegistryClient(config)
+        image = Image('iad.ocir.io/tnoff/myapp:v1.0.0')
+        image.digest = 'sha256:parent'
+
+        assert client._get_manifest_list_sub_digests(image) == {'sha256:child1', 'sha256:child2'}
 
     @patch('ocir_cleanup.registry_client.requests.get')
     @patch('ocir_cleanup.registry_client.oci')
