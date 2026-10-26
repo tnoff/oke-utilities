@@ -5,6 +5,12 @@ All notable changes to the OKE Security Scanner will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.10] - 2026-10-26
+
+### Changed
+
+- audit-watch: a flagged group now also logs `audit-watch detail` lines (event source, user agent, request action and path, resource name), so an unnamed event can be identified without the console
+
 ## [0.10.9] - 2026-10-26
 
 ### Changed
