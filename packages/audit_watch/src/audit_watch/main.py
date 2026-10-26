@@ -32,6 +32,9 @@ from .control_plane import ControlPlaneError, api_server_ips
 logger = getLogger(__name__)
 
 RESOURCE_AUTH = "resource"
+# At most this many distinct samples of the request detail are kept per group: enough to name the caller,
+# few enough that a noisy group cannot make a long log line.
+DETAIL_SAMPLES = 3
 
 
 def compartments(identity, tenancy_id: str) -> list[str]:
@@ -45,8 +48,26 @@ def compartments(identity, tenancy_id: str) -> list[str]:
     return [tenancy_id] + [c.id for c in found]
 
 
+def describe(event) -> str:
+    """Who and what an event was, from fields that name the caller without carrying a credential.
+
+    The warning for an event with no name (`event=unknown`) is otherwise just an IP address. These are the
+    fields that tell a reader what made the call: the service that logged it, the client's user agent and
+    the request action and path. Never the request headers or parameters.
+    """
+    data = event.data
+    request = getattr(data, "request", None)
+    parts = (
+        ("source", getattr(event, "source", None)),
+        ("agent", getattr(data.identity, "user_agent", None)),
+        ("request", " ".join(p for p in (getattr(request, "action", None), getattr(request, "path", None)) if p)),
+        ("resource", getattr(data, "resource_name", None)),
+    )
+    return " ".join(f"{label}={value.replace(' ', '_')}" for label, value in parts if value)
+
+
 def resource_events(audit, compartment_id: str, start: datetime, end: datetime):
-    """Yield (event_name, status, source_ip, event_type) for resource-principal events."""
+    """Yield (event_name, status, source_ip, event_type, detail) for resource-principal events."""
     events = oci.pagination.list_call_get_all_results_generator(
         audit.list_events, "record", compartment_id, start, end, retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY
     )
@@ -60,6 +81,7 @@ def resource_events(audit, compartment_id: str, start: datetime, end: datetime):
             str(getattr(data.response, "status", None) or "unknown"),
             getattr(data.identity, "ip_address", None) or "unknown",
             event.event_type or "unknown",
+            describe(event),
         )
 
 
@@ -82,14 +104,17 @@ def run(
 
     groups = collections.Counter()
     sources = collections.defaultdict(set)
+    details = collections.defaultdict(set)
     total = 0
     for comp in comps:
         try:
-            for name, status, ip, event_type in resource_events(audit, comp, start, end):
+            for name, status, ip, event_type, detail in resource_events(audit, comp, start, end):
                 total += 1
                 key = (name, status, event_type, ip in control_plane)
                 groups[key] += 1
                 sources[key].add(ip)
+                if detail and len(details[key]) < DETAIL_SAMPLES:
+                    details[key].add(detail)
         except oci.exceptions.ServiceError as exc:
             logger.error("Cannot list audit events for a compartment: %s %s", exc.status, exc.message)
             return 1
@@ -105,6 +130,9 @@ def run(
                 "audit-watch %s event=%s status=%s count=%d ips=%s type=%s",
                 "+".join(reasons), name, status, count, ips, event_type,
             )
+            # One line per sample, so a reader can tell what an unnamed event was without the console.
+            for detail in sorted(details[key]):
+                logger.warning("audit-watch detail event=%s ips=%s %s", name, ips, detail)
         else:
             logger.info("audit-watch seen event=%s status=%s count=%d ips=%s", name, status, count, ips)
 

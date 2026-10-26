@@ -158,3 +158,35 @@ def test_main_carries_on_without_the_api_server_addresses(monkeypatch, caplog):
         assert m.main([]) == 0
     assert run_.call_args.kwargs == {"control_plane": frozenset()}
     assert "Cannot read the API server addresses (HTTP 403); control plane writes will be flagged" in caplog.text
+
+
+def test_flagged_group_logs_what_made_the_call(cfg, caplog):
+    unnamed = event(None, ip="172.24.71.11", event_type="ServiceApi", source="BlockVolumeApi", user_agent="OKE CSI/1.2", action="POST", path="/20160918/volumeAttachments", resource_name="pvc-1")
+    with caplog.at_level(logging.INFO):
+        run(cfg, {"c1": [unnamed]})
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings == [
+        "audit-watch UNEXPECTED_WRITE event=unknown status=200 count=1 ips=172.24.71.11 type=ServiceApi",
+        "audit-watch detail event=unknown ips=172.24.71.11 source=BlockVolumeApi agent=OKE_CSI/1.2 request=POST_/20160918/volumeAttachments resource=pvc-1",
+    ]
+
+
+def test_detail_lines_are_not_alert_matches(cfg, caplog):
+    with caplog.at_level(logging.INFO):
+        run(cfg, {"c1": [event("DeleteBucket", user_agent="curl")]})
+    detail = [r.getMessage() for r in caplog.records if " detail " in r.getMessage()]
+    assert detail and not any(line.startswith(("audit-watch DENIED", "audit-watch UNEXPECTED_WRITE")) for line in detail)
+
+
+def test_detail_samples_are_capped_and_ordinary_traffic_has_none(cfg, caplog):
+    flagged = [event("DeleteBucket", user_agent=f"agent-{i}") for i in range(m.DETAIL_SAMPLES + 4)]
+    with caplog.at_level(logging.INFO):
+        run(cfg, {"c1": flagged + [event("GetVnic", user_agent="reader")]})
+    assert caplog.text.count("audit-watch detail") == m.DETAIL_SAMPLES
+    assert "reader" not in caplog.text
+
+
+def test_request_headers_parameters_and_credentials_never_reach_the_log(cfg, caplog):
+    with caplog.at_level(logging.DEBUG):
+        run(cfg, {"c1": [event("DeleteBucket", user_agent="curl", action="DELETE", path="/b/x")]})
+    assert "SECRET-HEADER" not in caplog.text and "SECRET-PARAM" not in caplog.text and "SECRET-TOKEN-VALUE" not in caplog.text

@@ -11,11 +11,17 @@ NOW = datetime(2026, 10, 19, 12, 0, 0, tzinfo=timezone.utc)
 TENANCY = "ocid1.tenancy.oc1..t"
 
 
-def event(name, status="200", auth_type="resource", ip="10.0.0.5", event_type="com.oraclecloud.x", credentials="SECRET-TOKEN-VALUE"):
-    """An Audit event shaped like the SDK's AuditEvent."""
-    identity = SimpleNamespace(auth_type=auth_type, ip_address=ip, credentials=credentials)
-    data = SimpleNamespace(event_name=name, identity=identity, response=SimpleNamespace(status=status))
-    return SimpleNamespace(event_type=event_type, data=data)
+def event(
+    name, status="200", auth_type="resource", ip="10.0.0.5", event_type="com.oraclecloud.x", credentials="SECRET-TOKEN-VALUE",
+    source=None, user_agent=None, action=None, path=None, resource_name=None,
+):
+    """An Audit event shaped like the SDK's AuditEvent. Request headers and parameters carry a marker the tests assert never reaches the log."""
+    identity = SimpleNamespace(auth_type=auth_type, ip_address=ip, credentials=credentials, user_agent=user_agent)
+    request = SimpleNamespace(action=action, path=path, headers={"authorization": ["SECRET-HEADER"]}, parameters={"x": ["SECRET-PARAM"]})
+    data = SimpleNamespace(
+        event_name=name, identity=identity, response=SimpleNamespace(status=status), request=request, resource_name=resource_name,
+    )
+    return SimpleNamespace(event_type=event_type, source=source, data=data)
 
 
 class Page:
