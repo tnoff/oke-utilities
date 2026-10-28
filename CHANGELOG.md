@@ -5,6 +5,12 @@ All notable changes to the OKE Security Scanner will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.12] - 2026-10-28
+
+### Changed
+
+- audit-watch: Block Volumes' unnamed `POST /v1/preLaunchAttachability` (its check before an instance launches with volumes, seen on every node replacement) and `GET /v1/volumeAttachability/...` are read-only checks and no longer `UNEXPECTED_WRITE`; the match is on the request path and only for an unnamed event, so any other unnamed POST/PUT/PATCH/DELETE still is, and the `seen` line says `check=yes`
+
 ## [0.10.11] - 2026-10-28
 
 ### Changed
