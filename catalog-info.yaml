@@ -163,6 +163,9 @@ spec:
   # experimental until the image is pushed and a workload runs it from docker-apps; the
   # consumesApis edge to image-bump is added with the release job that triggers it.
   owner: group:default/admin
+  # The sidecar every federated workload runs, so it belongs on the workload-federation page
+  # (System defined in tnoff/docker-apps' catalog).
+  system: workload-federation
   lifecycle: experimental
   dependsOn:
     # Creates the identity domain, the token-exchange app and the policies this trades against.
@@ -180,6 +183,7 @@ metadata:
 spec:
   type: service
   owner: group:default/admin
+  system: workload-federation
   lifecycle: experimental
   dependsOn:
     - component:default/rpst-sidecar
