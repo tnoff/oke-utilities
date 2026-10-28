@@ -217,3 +217,31 @@ def test_a_denied_unnamed_get_still_warns(cfg, caplog):
         run(cfg, {"c1": [event(None, status="404", ip="172.24.64.243", event_type="ServiceApi", action="GET", path="/v1/a")]})
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert warnings[0] == "audit-watch DENIED event=unknown status=404 count=1 ips=172.24.64.243 type=ServiceApi method=GET"
+
+
+def test_an_unnamed_prelaunch_check_is_not_flagged(cfg, caplog):
+    # Block Volumes asks whether an instance can launch with its volumes using a POST, and logs it without a name.
+    prelaunch = event(None, ip="172.24.65.226", event_type="ServiceApi", source="BlockVolumes", action="POST", path="/v1/preLaunchAttachability")
+    with caplog.at_level(logging.INFO):
+        code, _ = run(cfg, {"c1": [prelaunch]})
+    assert code == 0
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert "seen event=unknown status=200 count=1 ips=172.24.65.226 method=POST check=yes" in caplog.text
+    assert "flagged=0" in caplog.text
+
+
+def test_an_unnamed_post_next_to_a_prelaunch_check_is_still_flagged(cfg, caplog):
+    same = {"ip": "172.24.65.226", "event_type": "ServiceApi", "source": "BlockVolumes", "action": "POST"}
+    with caplog.at_level(logging.INFO):
+        run(cfg, {"c1": [event(None, path="/v1/preLaunchAttachability", **same), event(None, path="/v1/volumes", **same)]})
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings[0] == "audit-watch UNEXPECTED_WRITE event=unknown status=200 count=1 ips=172.24.65.226 type=ServiceApi method=POST"
+    assert len(warnings) == 2 and "request=POST_/v1/volumes" in warnings[1]
+    assert "seen event=unknown status=200 count=1 ips=172.24.65.226 method=POST check=yes" in caplog.text
+
+
+def test_a_denied_unnamed_prelaunch_check_still_warns(cfg, caplog):
+    with caplog.at_level(logging.INFO):
+        run(cfg, {"c1": [event(None, status="404", ip="172.24.65.226", event_type="ServiceApi", action="POST", path="/v1/preLaunchAttachability")]})
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings[0] == "audit-watch DENIED event=unknown status=404 count=1 ips=172.24.65.226 type=ServiceApi method=POST"
