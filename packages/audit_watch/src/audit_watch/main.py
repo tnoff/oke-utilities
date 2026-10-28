@@ -25,7 +25,7 @@ from typing import Optional
 
 import oci
 
-from .classify import UNNAMED, flags
+from .classify import UNNAMED, flags, is_check
 from .config import ConfigError, WatchConfig
 from .control_plane import ControlPlaneError, api_server_ips
 
@@ -72,8 +72,16 @@ def method_of(event) -> str:
     return action.upper() if action else "unknown"
 
 
+def path_of(event) -> str:
+    """The request path, or "" when the event has none."""
+    return getattr(getattr(event.data, "request", None), "path", None) or ""
+
+
 def resource_events(audit, compartment_id: str, start: datetime, end: datetime):
-    """Yield (event_name, status, source_ip, event_type, method, detail) for resource-principal events."""
+    """Yield (event_name, status, source_ip, event_type, method, check, detail) for resource-principal events.
+
+    `check` is True when the request path is one of the services' read-only checks (see `classify.is_check`).
+    """
     events = oci.pagination.list_call_get_all_results_generator(
         audit.list_events, "record", compartment_id, start, end, retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY
     )
@@ -88,6 +96,7 @@ def resource_events(audit, compartment_id: str, start: datetime, end: datetime):
             getattr(data.identity, "ip_address", None) or "unknown",
             event.event_type or "unknown",
             method_of(event),
+            is_check(path_of(event)),
             describe(event),
         )
 
@@ -115,10 +124,11 @@ def run(
     total = 0
     for comp in comps:
         try:
-            for name, status, ip, event_type, method, detail in resource_events(audit, comp, start, end):
+            for name, status, ip, event_type, method, check, detail in resource_events(audit, comp, start, end):
                 total += 1
-                # The method is part of the group: an unnamed POST must not hide inside a group of unnamed GETs.
-                key = (name, status, event_type, ip in control_plane, method)
+                # The method and the check are part of the group: an unnamed POST must not hide inside a group of
+                # unnamed GETs, nor behind a read-only check.
+                key = (name, status, event_type, ip in control_plane, method, check)
                 groups[key] += 1
                 sources[key].add(ip)
                 if detail and len(details[key]) < DETAIL_SAMPLES:
@@ -129,9 +139,9 @@ def run(
 
     flagged = 0
     for key, count in sorted(groups.items()):
-        name, status, event_type, from_control_plane, method = key
+        name, status, event_type, from_control_plane, method, check = key
         ips = ",".join(sorted(sources[key]))
-        reasons = flags(name, status, cfg.known_writes, from_control_plane, method)
+        reasons = flags(name, status, cfg.known_writes, from_control_plane, method, check)
         if reasons:
             flagged += count
             logger.warning(
@@ -142,7 +152,10 @@ def run(
             for detail in sorted(details[key]):
                 logger.warning("audit-watch detail event=%s ips=%s %s", name, ips, detail)
         else:
-            logger.info("audit-watch seen event=%s status=%s count=%d ips=%s method=%s", name, status, count, ips, method)
+            logger.info(
+                "audit-watch seen event=%s status=%s count=%d ips=%s method=%s%s",
+                name, status, count, ips, method, " check=yes" if check else "",
+            )
 
     logger.info(
         "audit-watch summary start=%s end=%s compartments=%d resource_events=%d flagged=%d",

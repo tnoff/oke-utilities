@@ -361,8 +361,11 @@ from tnoff/terraform#191 and OCI's own services such as the OKE cloud controller
   `KNOWN_WRITE_EVENTS`, unless it came from the cluster's own API server (below). An event with
   no name (`event=unknown`, which OCI's own services log for some calls, such as Block Volumes
   checking that a volume can attach when a pod moves node) is judged by its HTTP method instead:
-  a `GET` or `HEAD` is a read, anything else (or no method) is not. A named operation is never
-  excused by its method;
+  a `GET` or `HEAD` is a read, anything else (or no method) is not, unless its request path is one
+  of Block Volumes' read-only checks (`/v1/volumeAttachability`, `/v1/preLaunchAttachability`: the
+  second is a POST it sends before an instance launches with volumes, so every node replacement
+  logs it), which is matched on the path and so excuses no other unnamed POST. A named operation
+  is never excused by its method or path;
 - for each flagged group, up to three `audit-watch detail ...` WARNING lines naming what made the
   call: the service that logged it (`source`), the client's `agent`, the `request` action and path,
   and the `resource`. They exist because an event with no name (`event=unknown`) is otherwise just
