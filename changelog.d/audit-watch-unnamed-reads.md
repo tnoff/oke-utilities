@@ -1,0 +1,1 @@
+audit-watch: an event with no operation name is judged by its HTTP method, so OCI Block Volumes' `GET /volumeAttachability` checks (seen on every discord-db rollout) are no longer `UNEXPECTED_WRITE`; an unnamed POST/PUT/PATCH/DELETE still is, and the method is now in the group key and the log lines (`method=`)

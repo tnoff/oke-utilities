@@ -25,7 +25,7 @@ from typing import Optional
 
 import oci
 
-from .classify import flags
+from .classify import UNNAMED, flags
 from .config import ConfigError, WatchConfig
 from .control_plane import ControlPlaneError, api_server_ips
 
@@ -66,8 +66,14 @@ def describe(event) -> str:
     return " ".join(f"{label}={value.replace(' ', '_')}" for label, value in parts if value)
 
 
+def method_of(event) -> str:
+    """The request's HTTP method in upper case, or "unknown"."""
+    action = getattr(getattr(event.data, "request", None), "action", None)
+    return action.upper() if action else "unknown"
+
+
 def resource_events(audit, compartment_id: str, start: datetime, end: datetime):
-    """Yield (event_name, status, source_ip, event_type, detail) for resource-principal events."""
+    """Yield (event_name, status, source_ip, event_type, method, detail) for resource-principal events."""
     events = oci.pagination.list_call_get_all_results_generator(
         audit.list_events, "record", compartment_id, start, end, retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY
     )
@@ -77,10 +83,11 @@ def resource_events(audit, compartment_id: str, start: datetime, end: datetime):
         if getattr(data.identity, "auth_type", None) != RESOURCE_AUTH:
             continue
         yield (
-            data.event_name or "unknown",
+            data.event_name or UNNAMED,
             str(getattr(data.response, "status", None) or "unknown"),
             getattr(data.identity, "ip_address", None) or "unknown",
             event.event_type or "unknown",
+            method_of(event),
             describe(event),
         )
 
@@ -108,9 +115,10 @@ def run(
     total = 0
     for comp in comps:
         try:
-            for name, status, ip, event_type, detail in resource_events(audit, comp, start, end):
+            for name, status, ip, event_type, method, detail in resource_events(audit, comp, start, end):
                 total += 1
-                key = (name, status, event_type, ip in control_plane)
+                # The method is part of the group: an unnamed POST must not hide inside a group of unnamed GETs.
+                key = (name, status, event_type, ip in control_plane, method)
                 groups[key] += 1
                 sources[key].add(ip)
                 if detail and len(details[key]) < DETAIL_SAMPLES:
@@ -121,20 +129,20 @@ def run(
 
     flagged = 0
     for key, count in sorted(groups.items()):
-        name, status, event_type, from_control_plane = key
+        name, status, event_type, from_control_plane, method = key
         ips = ",".join(sorted(sources[key]))
-        reasons = flags(name, status, cfg.known_writes, from_control_plane)
+        reasons = flags(name, status, cfg.known_writes, from_control_plane, method)
         if reasons:
             flagged += count
             logger.warning(
-                "audit-watch %s event=%s status=%s count=%d ips=%s type=%s",
-                "+".join(reasons), name, status, count, ips, event_type,
+                "audit-watch %s event=%s status=%s count=%d ips=%s type=%s method=%s",
+                "+".join(reasons), name, status, count, ips, event_type, method,
             )
             # One line per sample, so a reader can tell what an unnamed event was without the console.
             for detail in sorted(details[key]):
                 logger.warning("audit-watch detail event=%s ips=%s %s", name, ips, detail)
         else:
-            logger.info("audit-watch seen event=%s status=%s count=%d ips=%s", name, status, count, ips)
+            logger.info("audit-watch seen event=%s status=%s count=%d ips=%s method=%s", name, status, count, ips, method)
 
     logger.info(
         "audit-watch summary start=%s end=%s compartments=%d resource_events=%d flagged=%d",
