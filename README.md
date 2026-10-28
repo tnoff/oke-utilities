@@ -352,13 +352,17 @@ reads the OCI Audit log for a short span in every compartment it can see and kee
 events made by **resource principals** (`auth_type == "resource"`: the federated workloads
 from tnoff/terraform#191 and OCI's own services such as the OKE cloud controller). It logs:
 
-- `audit-watch seen event=... status=... count=... ips=...`, one line per (event, status)
-  group, at INFO;
+- `audit-watch seen event=... status=... count=... ips=... method=...`, one line per (event, status,
+  method) group, at INFO;
 - `audit-watch DENIED ...` at WARNING for status 401/403/404. OCI answers a call a principal
   may not make with 404 `NotAuthorizedOrNotFound`, and such calls are logged;
 - `audit-watch UNEXPECTED_WRITE ...` at WARNING for any operation that is not a read
   (`Get`, `List`, `Summarize`, `Search`, `Inspect`, `Read`, `Describe`) and not in
-  `KNOWN_WRITE_EVENTS`, unless it came from the cluster's own API server (below);
+  `KNOWN_WRITE_EVENTS`, unless it came from the cluster's own API server (below). An event with
+  no name (`event=unknown`, which OCI's own services log for some calls, such as Block Volumes
+  checking that a volume can attach when a pod moves node) is judged by its HTTP method instead:
+  a `GET` or `HEAD` is a read, anything else (or no method) is not. A named operation is never
+  excused by its method;
 - for each flagged group, up to three `audit-watch detail ...` WARNING lines naming what made the
   call: the service that logged it (`source`), the client's `agent`, the `request` action and path,
   and the `resource`. They exist because an event with no name (`event=unknown`) is otherwise just

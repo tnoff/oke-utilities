@@ -45,3 +45,28 @@ def test_control_plane_refusals_still_count():
 
 def test_same_write_from_elsewhere_is_still_unexpected():
     assert flags("AttachVolume", "200", KNOWN, control_plane=False) == [UNEXPECTED_WRITE]
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "get"])
+def test_an_unnamed_read_is_quiet(method):
+    # OCI's Block Volumes service logs its attachability check without an operation name.
+    assert is_read("unknown", method)
+    assert flags("unknown", "200", KNOWN, method=method) == []
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE", "unknown", ""])
+def test_an_unnamed_call_that_is_not_a_read_is_still_unexpected(method):
+    assert not is_read("unknown", method)
+    assert flags("unknown", "200", KNOWN, method=method) == [UNEXPECTED_WRITE]
+
+
+def test_an_unnamed_call_without_a_method_argument_is_still_unexpected():
+    assert flags("unknown", "200", KNOWN) == [UNEXPECTED_WRITE]
+
+
+def test_a_denied_unnamed_read_is_still_a_denial():
+    assert flags("unknown", "404", KNOWN, method="GET") == [DENIED]
+
+
+def test_the_method_never_excuses_a_named_write():
+    assert flags("DeleteBucket", "200", KNOWN, method="GET") == [UNEXPECTED_WRITE]
