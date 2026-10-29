@@ -7,7 +7,7 @@ name = "audit-watch"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    "oci==2.188.0",
+    "oci==2.189.0",
 ]
 
 [project.optional-dependencies]
