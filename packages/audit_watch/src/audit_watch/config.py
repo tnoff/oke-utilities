@@ -1,5 +1,6 @@
 """Configuration for the audit watcher, loaded from env vars."""
 
+import ipaddress
 import os
 from dataclasses import dataclass
 
@@ -26,6 +27,11 @@ class WatchConfig:
     # Event names a resource principal may perform that are not reads.
     known_writes: frozenset = frozenset(DEFAULT_KNOWN_WRITES.split(","))
 
+    # Networks the OKE service itself calls from. It launches and terminates the cluster's worker instances
+    # from there whenever nodes are replaced, and its first launch attempt is answered 404 before the retry
+    # succeeds. Empty means nothing is excused: the same calls from anywhere else are always reported.
+    oke_service_networks: tuple = ()
+
     @classmethod
     def from_env(cls) -> "WatchConfig":
         """Read and validate the environment."""
@@ -37,8 +43,15 @@ class WatchConfig:
         if window < 1 or lag < 0:
             raise ConfigError("WINDOW_MINUTES must be at least 1 and LAG_MINUTES at least 0")
         names = os.getenv("KNOWN_WRITE_EVENTS", DEFAULT_KNOWN_WRITES)
+        try:
+            networks = tuple(
+                ipaddress.ip_network(n.strip()) for n in os.getenv("OKE_SERVICE_CIDRS", "").split(",") if n.strip()
+            )
+        except ValueError as exc:
+            raise ConfigError(f"OKE_SERVICE_CIDRS must be a comma-separated list of CIDRs: {exc}") from exc
         return cls(
             window_minutes=window,
             lag_minutes=lag,
             known_writes=frozenset(n.strip() for n in names.split(",") if n.strip()),
+            oke_service_networks=networks,
         )

@@ -27,3 +27,21 @@ def test_rejects_bad_values(monkeypatch, env):
         monkeypatch.setenv(key, value)
     with pytest.raises(ConfigError):
         WatchConfig.from_env()
+
+
+def test_no_network_is_excused_by_default(monkeypatch):
+    monkeypatch.delenv("OKE_SERVICE_CIDRS", raising=False)
+    assert WatchConfig.from_env().oke_service_networks == ()
+
+
+def test_oke_service_networks_are_parsed(monkeypatch):
+    monkeypatch.setenv("OKE_SERVICE_CIDRS", " 10.240.8.0/24 , 192.0.2.7/32 ,,")
+    nets = WatchConfig.from_env().oke_service_networks
+    assert [str(n) for n in nets] == ["10.240.8.0/24", "192.0.2.7/32"]
+
+
+@pytest.mark.parametrize("value", ["not-a-network", "10.240.8.0/24,300.1.1.1/8", "10.240.8.5/24"])
+def test_rejects_bad_networks(monkeypatch, value):
+    monkeypatch.setenv("OKE_SERVICE_CIDRS", value)
+    with pytest.raises(ConfigError):
+        WatchConfig.from_env()

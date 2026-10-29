@@ -25,7 +25,7 @@ from typing import Optional
 
 import oci
 
-from .classify import UNNAMED, flags, is_check
+from .classify import UNNAMED, flags, in_networks, is_check
 from .config import ConfigError, WatchConfig
 from .control_plane import ControlPlaneError, api_server_ips
 
@@ -127,8 +127,8 @@ def run(
             for name, status, ip, event_type, method, check, detail in resource_events(audit, comp, start, end):
                 total += 1
                 # The method and the check are part of the group: an unnamed POST must not hide inside a group of
-                # unnamed GETs, nor behind a read-only check.
-                key = (name, status, event_type, ip in control_plane, method, check)
+                # unnamed GETs, nor behind a read-only check. So is whether the OKE service made the call.
+                key = (name, status, event_type, ip in control_plane, method, check, in_networks(ip, cfg.oke_service_networks))
                 groups[key] += 1
                 sources[key].add(ip)
                 if detail and len(details[key]) < DETAIL_SAMPLES:
@@ -139,9 +139,9 @@ def run(
 
     flagged = 0
     for key, count in sorted(groups.items()):
-        name, status, event_type, from_control_plane, method, check = key
+        name, status, event_type, from_control_plane, method, check, from_oke = key
         ips = ",".join(sorted(sources[key]))
-        reasons = flags(name, status, cfg.known_writes, from_control_plane, method, check)
+        reasons = flags(name, status, cfg.known_writes, from_control_plane, method, check, from_oke)
         if reasons:
             flagged += count
             logger.warning(
@@ -153,8 +153,8 @@ def run(
                 logger.warning("audit-watch detail event=%s ips=%s %s", name, ips, detail)
         else:
             logger.info(
-                "audit-watch seen event=%s status=%s count=%d ips=%s method=%s%s",
-                name, status, count, ips, method, " check=yes" if check else "",
+                "audit-watch seen event=%s status=%s count=%d ips=%s method=%s%s%s",
+                name, status, count, ips, method, " check=yes" if check else "", " oke_service=yes" if from_oke else "",
             )
 
     logger.info(

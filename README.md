@@ -365,7 +365,11 @@ from tnoff/terraform#191 and OCI's own services such as the OKE cloud controller
   of Block Volumes' read-only checks (`/v1/volumeAttachability`, `/v1/preLaunchAttachability`: the
   second is a POST it sends before an instance launches with volumes, so every node replacement
   logs it), which is matched on the path and so excuses no other unnamed POST. A named operation
-  is never excused by its method or path;
+  is never excused by its method or path. `LaunchInstance` and `TerminateInstance` are neither
+  reported nor counted as denied when they come from `OKE_SERVICE_CIDRS`: the OKE service
+  replacing a worker node makes those calls, and its first launch attempt is answered 404 and
+  retried a second later. The same calls from any other address are reported as usual, and so is
+  every other event from that range;
 - for each flagged group, up to three `audit-watch detail ...` WARNING lines naming what made the
   call: the service that logged it (`source`), the client's `agent`, the `request` action and path,
   and the `resource`. They exist because an event with no name (`event=unknown`) is otherwise just
@@ -402,6 +406,7 @@ used for the one read above and nothing else.
 | `WINDOW_MINUTES` | No | `12` | Length of the audited span; match the CronJob schedule plus a little overlap |
 | `LAG_MINUTES` | No | `5` | The span ends this long before now, so events have reached the Audit service |
 | `KNOWN_WRITE_EVENTS` | No | `UpdateInternalVnic,UpdateNetworkLoadBalancer` | Write operations resource principals normally perform |
+| `OKE_SERVICE_CIDRS` | No | empty | Comma-separated CIDRs the OKE service calls from; `LaunchInstance`/`TerminateInstance` from them (a node being replaced) are not reported. Empty excuses nothing |
 
 Exit code 0 when the span was audited (flags are alerts, not failures), 1 when it could not
 be, so a broken watcher fails its Job.
