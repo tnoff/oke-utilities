@@ -1,5 +1,6 @@
 """Tests for the audit pass."""
 
+import ipaddress
 import logging
 from datetime import timedelta
 from types import SimpleNamespace
@@ -245,3 +246,61 @@ def test_a_denied_unnamed_prelaunch_check_still_warns(cfg, caplog):
         run(cfg, {"c1": [event(None, status="404", ip="172.24.65.226", event_type="ServiceApi", action="POST", path="/v1/preLaunchAttachability")]})
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert warnings[0] == "audit-watch DENIED event=unknown status=404 count=1 ips=172.24.65.226 type=ServiceApi method=POST"
+
+
+@pytest.fixture
+def oke_cfg():
+    """A config that knows the OKE service's network."""
+    return WatchConfig(oke_service_networks=(ipaddress.ip_network("10.240.8.0/24"),))
+
+
+def test_the_oke_service_replacing_a_node_is_not_flagged(oke_cfg, caplog):
+    # The first LaunchInstance attempt is answered 404 and retried a second later; the old instance is terminated.
+    events = [
+        event("LaunchInstance", status="404", ip="10.240.8.76", action="POST", path="/20160918/instances"),
+        event("TerminateInstance", status="204", ip="10.240.8.37", action="DELETE", path="/20160918/instances/x"),
+    ]
+    with caplog.at_level(logging.INFO):
+        code, _ = run(oke_cfg, {"c1": events})
+    assert code == 0
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert "seen event=LaunchInstance status=404 count=1 ips=10.240.8.76 method=POST oke_service=yes" in caplog.text
+    assert "seen event=TerminateInstance status=204 count=1 ips=10.240.8.37 method=DELETE oke_service=yes" in caplog.text
+    assert "flagged=0" in caplog.text
+
+
+def test_the_same_calls_from_a_pod_are_still_flagged(oke_cfg, caplog):
+    events = [
+        event("LaunchInstance", status="404", ip="10.0.119.14", action="POST"),
+        event("TerminateInstance", status="204", ip="10.0.119.14", action="DELETE"),
+    ]
+    with caplog.at_level(logging.INFO):
+        run(oke_cfg, {"c1": events})
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING and "detail" not in r.getMessage()]
+    assert warnings == [
+        "audit-watch DENIED+UNEXPECTED_WRITE event=LaunchInstance status=404 count=1 ips=10.0.119.14 type=com.oraclecloud.x method=POST",
+        "audit-watch UNEXPECTED_WRITE event=TerminateInstance status=204 count=1 ips=10.0.119.14 type=com.oraclecloud.x method=DELETE",
+    ]
+    assert "flagged=2" in caplog.text
+
+
+def test_another_write_from_the_oke_service_network_is_still_flagged(oke_cfg, caplog):
+    with caplog.at_level(logging.INFO):
+        run(oke_cfg, {"c1": [event("DeleteBucket", ip="10.240.8.76", action="DELETE")]})
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING and "detail" not in r.getMessage()]
+    assert warnings == ["audit-watch UNEXPECTED_WRITE event=DeleteBucket status=200 count=1 ips=10.240.8.76 type=com.oraclecloud.x method=DELETE"]
+
+
+def test_a_launch_from_the_oke_network_and_one_from_elsewhere_are_separate_groups(oke_cfg, caplog):
+    same = {"event_type": "com.oraclecloud.x", "action": "POST"}
+    with caplog.at_level(logging.INFO):
+        run(oke_cfg, {"c1": [event("LaunchInstance", ip="10.240.8.76", **same), event("LaunchInstance", ip="10.0.119.14", **same)]})
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING and "detail" not in r.getMessage()]
+    assert warnings == ["audit-watch UNEXPECTED_WRITE event=LaunchInstance status=200 count=1 ips=10.0.119.14 type=com.oraclecloud.x method=POST"]
+    assert "seen event=LaunchInstance status=200 count=1 ips=10.240.8.76 method=POST oke_service=yes" in caplog.text
+
+
+def test_without_a_configured_network_nothing_is_excused(cfg, caplog):
+    with caplog.at_level(logging.INFO):
+        run(cfg, {"c1": [event("LaunchInstance", ip="10.240.8.76", action="POST")]})
+    assert "audit-watch UNEXPECTED_WRITE event=LaunchInstance" in caplog.text

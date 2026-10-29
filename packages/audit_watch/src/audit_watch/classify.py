@@ -1,5 +1,7 @@
 """Decide which Audit events from resource principals deserve attention."""
 
+import ipaddress
+
 # OCI read operations start with one of these. Anything else changes state.
 READ_PREFIXES = ("Get", "List", "Summarize", "Search", "Inspect", "Read", "Describe")
 
@@ -15,12 +17,25 @@ READ_METHODS = frozenset({"GET", "HEAD"})
 # request path, only for an unnamed event, so no other unnamed POST is excused.
 READ_ONLY_PATHS = ("/v1/volumeAttachability", "/v1/preLaunchAttachability")
 
+# What the OKE service does to the cluster's worker instances when nodes are replaced. Excused only when the call
+# comes from the service's own network (see `in_networks`), never by name alone.
+NODE_LIFECYCLE_EVENTS = frozenset({"LaunchInstance", "TerminateInstance"})
+
 # OCI answers a call the principal may not make with 404 NotAuthorizedOrNotFound (it does not
 # reveal whether the thing exists), or 401/403.
 DENIED_STATUSES = frozenset({"401", "403", "404"})
 
 DENIED = "DENIED"
 UNEXPECTED_WRITE = "UNEXPECTED_WRITE"
+
+
+def in_networks(ip: str, networks) -> bool:
+    """True when `ip` (a string, possibly "unknown") is inside one of the networks."""
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(address in network for network in networks)
 
 
 def is_check(path: str) -> bool:
@@ -40,7 +55,13 @@ def is_read(event_name: str, method: str = "", check: bool = False) -> bool:
 
 
 def flags(
-    event_name: str, status: str, known_writes, control_plane: bool = False, method: str = "", check: bool = False
+    event_name: str,
+    status: str,
+    known_writes,
+    control_plane: bool = False,
+    method: str = "",
+    check: bool = False,
+    oke_service: bool = False,
 ) -> list[str]:
     """Why this event is worth a look, or an empty list for ordinary traffic.
 
@@ -50,7 +71,14 @@ def flags(
 
     `method` is the request's HTTP method and `check` whether its path is a read-only check; both only matter
     for an event with no name (see `is_read`).
+
+    `oke_service` is True for an event from the OKE service's own network (`WatchConfig.oke_service_networks`).
+    Its launching or terminating a worker instance is the cluster replacing a node, so such an event is never
+    reported, neither as a write nor for the 404 its first launch attempt gets. Any other event from that
+    network, and the same events from anywhere else, are judged as usual.
     """
+    if oke_service and event_name in NODE_LIFECYCLE_EVENTS:
+        return []
     found = []
     if status in DENIED_STATUSES:
         found.append(DENIED)
