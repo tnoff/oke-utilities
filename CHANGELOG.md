@@ -5,6 +5,12 @@ All notable changes to the OKE Security Scanner will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.13] - 2026-10-29
+
+### Changed
+
+- audit-watch: `LaunchInstance` and `TerminateInstance` from the OKE service's own network (new `OKE_SERVICE_CIDRS`, empty by default) are no longer reported, neither as `UNEXPECTED_WRITE` nor for the 404 its first launch attempt gets, so replacing a node no longer trips `Audit Watch Flagged`; the same calls from any other address, and any other event from that range, still alert, and the `seen` line says `oke_service=yes`. Also restores `packages/audit_watch/tests/test_classify.py`, which #209 emptied by mistake
+
 ## [0.10.12] - 2026-10-28
 
 ### Changed
