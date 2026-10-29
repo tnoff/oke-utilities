@@ -9,7 +9,7 @@ requires-python = ">=3.13"
 dependencies = [
     "oke-scanner-core",
     "kubernetes==37.0.1",
-    "oci==2.188.0",
+    "oci==2.189.0",
     "requests",
     # dappertable is GitHub-canonical. The GitLab copy still resolves, but its
     # tags stop at v1.1.5 while GitHub is on v1.1.6, so this pin could never be
