@@ -36,7 +36,7 @@ permissions:
 jobs:
   publish:
     name: Generate and publish
-    uses: tnoff/github-workflows/.github/workflows/techdocs-publish-oidc.yml@3fa6bb93ccbfdfa68814da0b7f50b9f0d3d6e707  # techdocs-publish-oidc-v1.1.1
+    uses: tnoff/github-workflows/.github/workflows/techdocs-publish-oidc.yml@717d50d682ec44c1e8a7b73e18f12a90735cc4d8  # techdocs-publish-oidc-v1.1.2
     with:
       entity_ref: default/Component/oke-scan
       techdocs_bucket_name: backstage_techdocs
