@@ -12,8 +12,10 @@ RUN apt-get update && \
 
 WORKDIR /build
 COPY packages/core/pyproject.toml packages/core/pyproject.toml
+COPY packages/core/VERSION packages/core/VERSION
 COPY packages/core/src packages/core/src
 COPY packages/ocir_cleanup/pyproject.toml packages/ocir_cleanup/pyproject.toml
+COPY packages/ocir_cleanup/VERSION packages/ocir_cleanup/VERSION
 COPY packages/ocir_cleanup/src packages/ocir_cleanup/src
 RUN pip install --no-cache-dir --prefix=/install ./packages/core ./packages/ocir_cleanup
 

@@ -17,6 +17,16 @@ name: Release
 # trigger-bump pins docker-apps at a tag that was never written.
 #
 # There is no release job: the GitLab config included no release template.
+#
+# ---------------------------------------------------------------------------
+# Per-package versions
+# ---------------------------------------------------------------------------
+# Every package under packages/ has its own VERSION and CHANGELOG.md and is
+# tagged <pkg>-vX.Y.Z (core-v0.3.0, scan-v0.1.0, ...). The root VERSION and
+# the v* tag stream stopped at v0.10.19. assemble-changelog folds each
+# package's own changelog.d/ into its own CHANGELOG.md, all in one commit. The
+# shared tag.yml reads a single version file and tags plain vX.Y.Z, so tagging
+# is done inline by the `tag` job below.
 
 on:
   push:
@@ -135,21 +145,59 @@ jobs:
     permissions:
       contents: write
     uses: tnoff/github-workflows/.github/workflows/assemble-changelog.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # assemble-changelog-v1.1.1
+    with:
+      version_files_command: .github/scripts/package-version-files.sh all
     secrets:
       app_client_id: ${{ secrets.CI_APP_CLIENT_ID }}
       app_private_key: ${{ secrets.CI_APP_PRIVATE_KEY }}
 
+  # Same contract as the shared tag.yml with gate_on_fragments, per package:
+  # while ANY package still has fragments pending, defer -- assemble-changelog
+  # is about to push the fold commit, and that run tags against the assembled
+  # changelogs. Then tag each package whose <pkg>-v<VERSION> does not exist
+  # yet. Idempotent: a re-run, or a merge that bumped nothing, tags nothing.
   tag:
-    name: Tag
+    name: Tag packages
     needs: assemble-changelog
+    runs-on: ubuntu-26.04
     permissions:
-      contents: write
-    uses: tnoff/github-workflows/.github/workflows/tag.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # tag-v1.0.1
-    with:
-      gate_on_fragments: true
-    secrets:
-      app_client_id: ${{ secrets.CI_APP_CLIENT_ID }}
-      app_private_key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+      contents: read
+    steps:
+      # Pushes the tags as the tnoff-ci App, the same identity the shared
+      # tag.yml uses, so the tag ruleset's bypass applies unchanged.
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        with:
+          client-id: ${{ secrets.CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Tag
+        run: |
+          set -euo pipefail
+          if compgen -G 'packages/*/changelog.d/*.md' >/dev/null; then
+            echo "Changelog fragments pending -- deferring tags to the post-assemble run:"
+            compgen -G 'packages/*/changelog.d/*.md' | sed 's/^/  /'
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          while IFS= read -r vfile; do
+            pkg="$(basename "$(dirname "${vfile}")")"
+            tag="${pkg}-v$(tr -d '[:space:]' < "${vfile}")"
+            if git ls-remote --tags origin "refs/tags/${tag}" | grep -q .; then
+              echo "Tag ${tag} already exists -- skipping"
+              continue
+            fi
+            git tag "${tag}"
+            git push origin "refs/tags/${tag}"
+            echo "Tag ${tag} created"
+          done < <(.github/scripts/package-version-files.sh all)
 
   push-image:
     name: Push image

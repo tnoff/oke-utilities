@@ -8,6 +8,7 @@ RUN apt-get update && \
 
 WORKDIR /build
 COPY packages/audit_watch/pyproject.toml packages/audit_watch/pyproject.toml
+COPY packages/audit_watch/VERSION packages/audit_watch/VERSION
 COPY packages/audit_watch/src packages/audit_watch/src
 RUN pip install --no-cache-dir --prefix=/install ./packages/audit_watch
 

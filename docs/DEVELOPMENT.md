@@ -59,3 +59,11 @@ python -m rpst_sidecar     # RPST sidecar (pip install -e packages/rpst_sidecar 
 python -m rpst_sidecar --check  # exit 0 only if OUTPUT_DIR holds a fresh rpst and private.pem
 python -m rpst_sidecar --once   # one exchange, exit 0/1 (canary)
 ```
+
+## Versioning and releases
+
+Each package has its own `packages/<pkg>/VERSION` and `packages/<pkg>/CHANGELOG.md`, and is tagged
+`<pkg>-vX.Y.Z` on merge. To release a change by hand, bump that package's `VERSION` and add a one-line fragment
+at `packages/<pkg>/changelog.d/<short-name>.md`. A change to `packages/core` should also bump the packages that
+depend on it (`scan`, `secret_age`, `ocir_cleanup`). Renovate dependency PRs do all of this automatically. Details
+are in [AGENTS.md](AGENTS.md#versioning).
