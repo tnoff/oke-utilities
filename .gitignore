@@ -54,3 +54,7 @@ Thumbs.db
 coverage.xml
 htmlcov/
 .pytest_cache/
+
+# Go build output (packages/rpst_sidecar)
+packages/rpst_sidecar/rpst_sidecar
+packages/rpst_sidecar/rpst-sidecar

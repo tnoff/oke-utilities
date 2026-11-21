@@ -202,6 +202,8 @@ jobs:
     with:
       dockerfile: packages/jwks_publisher/Dockerfile
 
+  # The sidecar is Go, so tox does not cover it: its Dockerfile's build stage runs
+  # `go vet` and `go test`, and this build is where they gate the PR.
   build-rpst-sidecar:
     name: Build and scan rpst-sidecar image
     needs: changes

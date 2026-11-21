@@ -155,9 +155,9 @@ metadata:
     Sidecar container that trades a pod's projected ServiceAccount token for an OCI
     resource principal session token (RPST) on a loop and writes it, with its private
     key, to a shared in-memory volume, so the main container can sign OCI SDK calls
-    without a stored API key (tnoff/terraform#191). Its own package (packages/rpst_sidecar/)
-    and its own image; stands alone, with only `cryptography` as a dependency (urllib for
-    HTTP, no OCI SDK). See the README's "RPST sidecar" section.
+    without a stored API key (tnoff/terraform#191). Its own Go module (packages/rpst_sidecar/)
+    and its own distroless image; stands alone, standard library only (no OCI SDK).
+    See the README's "RPST sidecar" section.
 spec:
   type: library
   # experimental until the image is pushed and a workload runs it from docker-apps; the
