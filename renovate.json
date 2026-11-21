@@ -4,12 +4,31 @@
     "github>tnoff/github-workflows//renovate/default-github",
     "github>tnoff/github-workflows//renovate/python"
   ],
-  "enabledManagers": ["github-actions", "pep621", "dockerfile", "custom.regex"],
+  "enabledManagers": [
+    "github-actions",
+    "pep621",
+    "dockerfile",
+    "custom.regex"
+  ],
   "packageRules": [
     {
       "description": "dappertable is a runtime dependency, so it must cut a release. The shared python preset only puts pep621 and dockerfile updates under the dev- prefix, and this pin is tracked by the custom.regex manager below, so without this rule it lands on renovate/tnoff-dappertable-1.x and ci.yml's bump-version job (gated on renovate/dev-*) is skipped.",
-      "matchManagers": ["custom.regex"],
-      "matchPackageNames": ["tnoff/dappertable"],
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "tnoff/dappertable"
+      ],
+      "additionalBranchPrefix": "dev-"
+    },
+    {
+      "description": "oke-scanner-core is a runtime dependency of scan, secret_age and ocir_cleanup, pinned to this repo's own core-vX.Y.Z tag tarball. Like dappertable it is tracked by custom.regex, which the shared python preset leaves unprefixed, so without this rule the update skips ci.yml's bump-version job (gated on renovate/dev-*) and the dependents never cut a release. All three pins share one depName, so they land in ONE PR and stay on the same tag, which tox needs (it installs all three in one env).",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "tnoff/oke-utilities"
+      ],
       "additionalBranchPrefix": "dev-"
     }
   ],
@@ -17,11 +36,25 @@
     {
       "description": "Track the dappertable tarball pin (pep621 cannot version a plain archive URL)",
       "customType": "regex",
-      "fileMatch": ["(^|/)pyproject\\.toml$"],
+      "fileMatch": [
+        "(^|/)pyproject\\.toml$"
+      ],
       "matchStrings": [
         "https://github\\.com/(?<depName>tnoff/dappertable)/archive/refs/tags/(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)\\.tar\\.gz"
       ],
       "datasourceTemplate": "github-tags"
+    },
+    {
+      "description": "Track the oke-scanner-core pin: this repo's own packages/core, installed from its core-vX.Y.Z tag tarball. extractVersion keeps only core-v* tags, so the old repo-wide v* tags and the other packages' <pkg>-v* tags are ignored.",
+      "customType": "regex",
+      "fileMatch": [
+        "(^|/)pyproject\\.toml$"
+      ],
+      "matchStrings": [
+        "https://github\\.com/(?<depName>tnoff/oke-utilities)/archive/refs/tags/core-v(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\\.tar\\.gz#subdirectory=packages/core"
+      ],
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^core-v(?<version>.+)$"
     }
   ]
 }

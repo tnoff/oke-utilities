@@ -227,7 +227,7 @@ The final image carries no `curl` / `wget` / `tar` / `git` / build toolchain. Th
 
 The project uses **GitHub Actions**. `.github/workflows/` holds three callers:
 
-- `ci.yml` — on pull requests: trufflehog secret scan, the tox matrix (pytest + pylint + bandit across Python 3.13–3.15) with a diff-cover gate, a conditional image build + image scan for EACH image (`changes` job outputs `image`/`secret_age_image`/`ocir_cleanup_image`, gated on separate path filters -- not a matrix, so each has its own `needs`/`if`; `packages/core/*` flips all three, since all three depend on it), `bump-version`, and `check-workflow-contracts` (catches a `uses:` whose inputs/secrets no longer match the pinned callee). The scan build/scan job passes `dockerfile: packages/scan/Dockerfile` explicitly (the reusable `docker-build-check.yml` defaults to a root `Dockerfile`, which does not exist here).
+- `ci.yml` — on pull requests: trufflehog secret scan, the tox matrix (pytest + pylint + bandit across Python 3.13–3.15) with a diff-cover gate, a conditional image build + image scan for EACH image (`changes` job outputs `image`/`secret_age_image`/`ocir_cleanup_image`, gated on separate path filters -- not a matrix, so each has its own `needs`/`if`; `packages/core/*` flips none, since every image installs its pinned `core-vX.Y.Z` tarball rather than the local core), `bump-version`, and `check-workflow-contracts` (catches a `uses:` whose inputs/secrets no longer match the pinned callee). The scan build/scan job passes `dockerfile: packages/scan/Dockerfile` explicitly (the reusable `docker-build-check.yml` defaults to a root `Dockerfile`, which does not exist here).
 - `release.yml` — on `main`: fold each package's changelog, tag each package from its own `VERSION` (see Versioning), push each changed image to OCIR under its own OCIR repo name, and trigger a `docker-apps` pin bump per image (`oke-scan`, `secret-age-tracker` and `ocir-cleanup` are separate `bump_source`s, each its own explicit `push-image-*`/`trigger-bump-*` job pair -- not a matrix; matrix job outputs aren't addressable per-leg, and `trigger-bump` needs the exact tag its own paired push produced). Same `dockerfile: packages/scan/Dockerfile` override on the scan `push-image` job as `ci.yml`. Each job hardcodes its OCIR `repo_name` (`oke-scan`, `secret_age_tracker`, `ocir_cleanup`).
 - `scheduled.yml` — weekly: Renovate and branch cleanup.
 
@@ -242,8 +242,17 @@ directory (`core-v0.3.0`, `scan-v0.1.0`, `secret_age-v0.1.0`). The repo-wide `VE
 at `v0.10.19`; the root `CHANGELOG.md` keeps that history.
 
 - `.github/scripts/package-version-files.sh` lists the `VERSION` files for the shared workflows'
-  `version_files_command`: `changed` (packages the PR touches; a `packages/core` change adds every package that
-  depends on `oke-scanner-core`) for `bump-version`, `all` for `assemble-changelog` and the tag job.
+  `version_files_command`: `changed` (packages the PR touches) for `bump-version`, `all` for
+  `assemble-changelog` and the tag job.
+- `core` ships like any other dependency. scan, secret_age and ocir_cleanup depend on
+  `oke-scanner-core @ https://github.com/tnoff/oke-utilities/archive/refs/tags/core-vX.Y.Z.tar.gz#subdirectory=packages/core`,
+  and their Dockerfiles no longer copy `packages/core`, so a core change reaches no image and flips no
+  image filter in `ci.yml`/`release.yml`. Renovate's `custom.regex` manager tracks the `core-v*` tags
+  (`extractVersion` ignores every other tag stream) under the `dev-` prefix, and moves all three pins in one PR.
+  That PR touches all three packages, so `bump-version` bumps and releases each of them. Keep the three pins on
+  the same tag: tox installs them into one env.
+- tox does not list `packages/core` in `deps` (pip refuses the tarball pin plus an editable core in one command);
+  `commands_pre` installs the editable core over the pinned one, so every package is tested against core at HEAD.
 - `bump-version` (Renovate `dev-` branches only) patch-bumps each affected package and drops a fragment in
   `packages/<pkg>/changelog.d/`. A PR that touches no package (root dev tooling, workflows) bumps nothing.
 - `assemble-changelog` folds every package's fragments in one `docs: assemble changelog for N package(s)` commit.

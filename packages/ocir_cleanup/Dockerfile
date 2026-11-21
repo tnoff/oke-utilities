@@ -2,8 +2,8 @@
 # oci, requests, dappertable, the OpenTelemetry SDK/exporters (the
 # ocir-cleanup-cronjob CronJob genuinely uses OTLP logs+metrics, unlike
 # secret-age-tracker). No Trivy binary at all -- this image never scans an
-# image. Build context is the repo root so this stage can also COPY
-# packages/core.
+# image. oke-scanner-core comes from its pinned core-vX.Y.Z tag tarball
+# (see pyproject.toml), not from packages/core in this checkout.
 FROM python:3.15-slim AS py-builder
 
 RUN apt-get update && \
@@ -11,13 +11,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY packages/core/pyproject.toml packages/core/pyproject.toml
-COPY packages/core/VERSION packages/core/VERSION
-COPY packages/core/src packages/core/src
 COPY packages/ocir_cleanup/pyproject.toml packages/ocir_cleanup/pyproject.toml
 COPY packages/ocir_cleanup/VERSION packages/ocir_cleanup/VERSION
 COPY packages/ocir_cleanup/src packages/ocir_cleanup/src
-RUN pip install --no-cache-dir --prefix=/install ./packages/core ./packages/ocir_cleanup
+RUN pip install --no-cache-dir --prefix=/install ./packages/ocir_cleanup
 
 
 FROM python:3.15-slim

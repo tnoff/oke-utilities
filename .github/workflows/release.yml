@@ -108,15 +108,14 @@ jobs:
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             case "$f" in
-              packages/core/*|packages/scan/*) IMAGE=true ;;
+              packages/scan/*) IMAGE=true ;;
             esac
             case "$f" in
-              packages/core/*|packages/secret_age/*) SECRET_AGE_IMAGE=true ;;
+              packages/secret_age/*) SECRET_AGE_IMAGE=true ;;
             esac
             case "$f" in
-              packages/core/*|packages/ocir_cleanup/*) OCIR_CLEANUP_IMAGE=true ;;
+              packages/ocir_cleanup/*) OCIR_CLEANUP_IMAGE=true ;;
             esac
-            # No packages/core here: the publisher does not depend on it.
             case "$f" in
               packages/jwks_publisher/*) JWKS_PUBLISHER_IMAGE=true ;;
             esac

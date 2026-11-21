@@ -4,9 +4,9 @@
 #
 #   all      every package that has a VERSION file (release-time fold)
 #   changed  packages this PR touches, diffed against origin/$BASE_REF.
-#            A change under packages/core also lists every package whose
-#            pyproject depends on oke-scanner-core: their images bake core in,
-#            so a core change ships a new build of each of them.
+#            A core change bumps core only: its dependents pin a core-vX.Y.Z
+#            tarball, so they move when Renovate bumps that pin, which touches
+#            (and therefore bumps) each of them.
 #
 # Prints nothing when no package is affected; bump-version then bumps nothing.
 set -euo pipefail
@@ -23,10 +23,6 @@ case "${1:-}" in
     : "${BASE_REF:?BASE_REF must be set}"
     PKGS="$(git diff --name-only "origin/${BASE_REF}...HEAD" \
       | sed -nE 's#^packages/([^/]+)/.*#\1#p' | sort -u)"
-    if printf '%s\n' "${PKGS}" | grep -qx core; then
-      DEPENDENTS="$(grep -l '"oke-scanner-core' packages/*/pyproject.toml | cut -d/ -f2 || true)"
-      PKGS="$(printf '%s\n%s\n' "${PKGS}" "${DEPENDENTS}" | sed '/^$/d' | sort -u)"
-    fi
     for p in ${PKGS}; do
       if [ -f "packages/${p}/VERSION" ]; then
         echo "packages/${p}/VERSION"

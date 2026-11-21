@@ -8,7 +8,10 @@ name = "secret-age-tracker"
 dynamic = ["version"]
 requires-python = ">=3.13"
 dependencies = [
-    "oke-scanner-core",
+    # core ships as its own release: pinned to its core-vX.Y.Z tag tarball,
+    # bumped by Renovate (renovate.json). Keep scan, secret_age and
+    # ocir_cleanup on the SAME tag -- tox installs all three in one env.
+    "oke-scanner-core @ https://github.com/tnoff/oke-utilities/archive/refs/tags/core-v0.3.0.tar.gz#subdirectory=packages/core",
     "kubernetes==37.0.3",
     "oci==2.191.0",
     "requests",
