@@ -1,8 +1,8 @@
 # Own the secret-age tracker's dependency set: kubernetes, oci, requests,
 # dappertable. No Trivy binary, no OpenTelemetry SDK/exporters -- this
 # CronJob never scans images and has no OTLP setup at all (plain stdout
-# logging only). Build context is the repo root so this stage can also
-# COPY packages/core.
+# logging only). oke-scanner-core comes from its pinned core-vX.Y.Z tag tarball
+# (see pyproject.toml), not from packages/core in this checkout.
 FROM python:3.15-slim AS py-builder
 
 RUN apt-get update && \
@@ -10,13 +10,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY packages/core/pyproject.toml packages/core/pyproject.toml
-COPY packages/core/VERSION packages/core/VERSION
-COPY packages/core/src packages/core/src
 COPY packages/secret_age/pyproject.toml packages/secret_age/pyproject.toml
 COPY packages/secret_age/VERSION packages/secret_age/VERSION
 COPY packages/secret_age/src packages/secret_age/src
-RUN pip install --no-cache-dir --prefix=/install ./packages/core ./packages/secret_age
+RUN pip install --no-cache-dir --prefix=/install ./packages/secret_age
 
 
 FROM python:3.15-slim

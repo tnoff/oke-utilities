@@ -12,17 +12,15 @@ RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/
 # No build-essential needed here -- oci (and its crc32c transitive dep, the
 # reason build-essential existed in this stage) moved out with
 # packages/ocir_cleanup, and scan no longer depends on the OCI SDK at all.
-# Build context is the repo root so this stage can also COPY packages/core.
+# oke-scanner-core comes from its pinned core-vX.Y.Z tag tarball
+# (see pyproject.toml), not from packages/core in this checkout.
 FROM python:3.15-slim AS py-builder
 
 WORKDIR /build
-COPY packages/core/pyproject.toml packages/core/pyproject.toml
-COPY packages/core/VERSION packages/core/VERSION
-COPY packages/core/src packages/core/src
 COPY packages/scan/pyproject.toml packages/scan/pyproject.toml
 COPY packages/scan/VERSION packages/scan/VERSION
 COPY packages/scan/src packages/scan/src
-RUN pip install --no-cache-dir --prefix=/install ./packages/core ./packages/scan
+RUN pip install --no-cache-dir --prefix=/install ./packages/scan
 
 
 FROM python:3.15-slim

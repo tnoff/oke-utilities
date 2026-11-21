@@ -109,8 +109,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Three images, three independent filters -- not a matrix. packages/core
-      # is shared by all three, so a change there flips every flag. See
+      # One independent filter per image -- not a matrix. packages/core flips
+      # nothing: no image builds it from this checkout, each dependent installs
+      # its pinned core-vX.Y.Z tarball, so core reaches an image only through
+      # the Renovate PR that bumps that pin (which touches the package). See
       # discord-bot's measured-import-closure module for what this looks
       # like at six images, and don't reach for that machinery before it's
       # needed.
@@ -131,15 +133,14 @@ jobs:
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             case "$f" in
-              packages/core/*|packages/scan/*) IMAGE=true ;;
+              packages/scan/*) IMAGE=true ;;
             esac
             case "$f" in
-              packages/core/*|packages/secret_age/*) SECRET_AGE_IMAGE=true ;;
+              packages/secret_age/*) SECRET_AGE_IMAGE=true ;;
             esac
             case "$f" in
-              packages/core/*|packages/ocir_cleanup/*) OCIR_CLEANUP_IMAGE=true ;;
+              packages/ocir_cleanup/*) OCIR_CLEANUP_IMAGE=true ;;
             esac
-            # No packages/core here: the publisher does not depend on it.
             case "$f" in
               packages/jwks_publisher/*) JWKS_PUBLISHER_IMAGE=true ;;
             esac
@@ -224,7 +225,7 @@ jobs:
     # bumps a version, writes a changelog fragment, and therefore cuts a release.
     #
     # Per-package: the script prints the packages/<pkg>/VERSION of every
-    # package the PR touches (plus core's dependents when core changes), and
+    # package the PR touches, and
     # each gets its own patch bump and its own fragment under
     # packages/<pkg>/changelog.d/. A PR touching no package bumps nothing.
     if: startsWith(github.head_ref, 'renovate/dev-')
