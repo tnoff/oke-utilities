@@ -1,32 +1,31 @@
-# The sidecar's whole dependency set is `cryptography`: it talks to the identity domain
-# with urllib. No OCI SDK, no kubernetes client, no oke-scanner-core.
 # Build context is the repo root, like the other images.
-FROM python:3.15-slim AS py-builder
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential && \
-    rm -rf /var/lib/apt/lists/*
+#
+# The build stage also runs vet and the tests, so CI's image build (build-rpst-sidecar) is the Go
+# test gate: tox covers only the Python packages.
+FROM golang:1.27.4-bookworm AS go-builder
 
 WORKDIR /build
-COPY packages/rpst_sidecar/pyproject.toml packages/rpst_sidecar/pyproject.toml
-COPY packages/rpst_sidecar/src packages/rpst_sidecar/src
-RUN pip install --no-cache-dir --prefix=/install ./packages/rpst_sidecar
+COPY packages/rpst_sidecar/ ./
+RUN go vet ./... && go test -count=1 ./...
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/rpst-sidecar .
+# Probes and commands written for the Python image run `python -m rpst_sidecar ...`; the binary
+# drops that prefix. Remove this link once no manifest calls `python` any more.
+RUN ln -s rpst-sidecar /out/python
 
 
-FROM python:3.15-slim
+# Static binary, CA bundle, no shell, no package manager.
+FROM gcr.io/distroless/static-debian12:nonroot
 
-RUN apt-get update && \
-    apt-get -y upgrade && \
-    rm -rf /var/lib/apt/lists/*
+COPY --from=go-builder /out/ /usr/local/bin/
 
-COPY --from=py-builder /install /usr/local
-
-RUN useradd -m -u 1000 rpst
-USER rpst
-
-ENV PYTHONUNBUFFERED=1
+# The Python image's `rpst` user was uid/gid 1000; keep it so file ownership on the shared
+# volume does not change under existing pods.
+USER 1000:1000
+ENV PATH=/usr/local/bin:/usr/bin:/bin
 
 LABEL org.opencontainers.image.source="https://github.com/tnoff/oke-utilities" \
       org.opencontainers.image.description="Trades a projected ServiceAccount token for an OCI resource principal session token on a loop (tnoff/terraform#191)"
 
-CMD ["python", "-m", "rpst_sidecar"]
+# CMD, not ENTRYPOINT, as before: a pod spec's `args:` replaces the whole command line, and
+# `args: [python, -m, rpst_sidecar, --once]` must keep working.
+CMD ["rpst-sidecar"]
