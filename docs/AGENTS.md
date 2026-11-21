@@ -78,14 +78,11 @@ oke-utilities/
 ├── pyproject.toml        # No importable code of its own -- see Code Quality below.
 │                         # Just the dev-tool versions tox installs and the
 │                         # pylint config tox's combined lint invocation reads
-│                         # from repo-root cwd, plus VERSION's dynamic-version
-│                         # wiring (unused by anything else; tag.yml/
-│                         # bump-version.yml read VERSION directly as text).
+│                         # from repo-root cwd. Its version is a 0.0.0
+│                         # placeholder; nothing releases the root.
 ├── tox.ini               # pytest / pylint / bandit envs -- covers all four
 │                         # packages/*/src, see its own header comment
-├── VERSION               # Semantic version for the whole repo's release stream
-│                         # (tag.yml/bump-version.yml), independent of each
-│                         # package's own pyproject.toml version field
+├── CHANGELOG.md          # Repo-wide history, frozen at 0.10.19 (see Versioning)
 ├── README.md             # User-facing documentation
 ├── mkdocs.yml            # Backstage TechDocs site config
 └── docs/
@@ -231,10 +228,30 @@ The final image carries no `curl` / `wget` / `tar` / `git` / build toolchain. Th
 The project uses **GitHub Actions**. `.github/workflows/` holds three callers:
 
 - `ci.yml` — on pull requests: trufflehog secret scan, the tox matrix (pytest + pylint + bandit across Python 3.13–3.15) with a diff-cover gate, a conditional image build + image scan for EACH image (`changes` job outputs `image`/`secret_age_image`/`ocir_cleanup_image`, gated on separate path filters -- not a matrix, so each has its own `needs`/`if`; `packages/core/*` flips all three, since all three depend on it), `bump-version`, and `check-workflow-contracts` (catches a `uses:` whose inputs/secrets no longer match the pinned callee). The scan build/scan job passes `dockerfile: packages/scan/Dockerfile` explicitly (the reusable `docker-build-check.yml` defaults to a root `Dockerfile`, which does not exist here).
-- `release.yml` — on `main`: fold the changelog, tag from `VERSION` (shared across all three images), push each changed image to OCIR under its own OCIR repo name, and trigger a `docker-apps` pin bump per image (`oke-scan`, `secret-age-tracker` and `ocir-cleanup` are separate `bump_source`s, each its own explicit `push-image-*`/`trigger-bump-*` job pair -- not a matrix; matrix job outputs aren't addressable per-leg, and `trigger-bump` needs the exact tag its own paired push produced). Same `dockerfile: packages/scan/Dockerfile` override on the scan `push-image` job as `ci.yml`. Each job hardcodes its OCIR `repo_name` (`oke-scan`, `secret_age_tracker`, `ocir_cleanup`).
+- `release.yml` — on `main`: fold each package's changelog, tag each package from its own `VERSION` (see Versioning), push each changed image to OCIR under its own OCIR repo name, and trigger a `docker-apps` pin bump per image (`oke-scan`, `secret-age-tracker` and `ocir-cleanup` are separate `bump_source`s, each its own explicit `push-image-*`/`trigger-bump-*` job pair -- not a matrix; matrix job outputs aren't addressable per-leg, and `trigger-bump` needs the exact tag its own paired push produced). Same `dockerfile: packages/scan/Dockerfile` override on the scan `push-image` job as `ci.yml`. Each job hardcodes its OCIR `repo_name` (`oke-scan`, `secret_age_tracker`, `ocir_cleanup`).
 - `scheduled.yml` — weekly: Renovate and branch cleanup.
 
 Each job calls a reusable workflow from `tnoff/github-workflows`, SHA-pinned in `uses:` and kept current by Renovate's github-actions manager.
+
+## Versioning
+
+Every package is versioned on its own, `core` included. `packages/<pkg>/VERSION` is the single source (each
+`pyproject.toml` reads it via `[tool.setuptools.dynamic]`, and each Dockerfile copies it in), and
+`packages/<pkg>/CHANGELOG.md` is its changelog. Releases are tagged `<pkg>-vX.Y.Z`, named after the package
+directory (`core-v0.3.0`, `scan-v0.1.0`, `secret_age-v0.1.0`). The repo-wide `VERSION` and `vX.Y.Z` tags stopped
+at `v0.10.19`; the root `CHANGELOG.md` keeps that history.
+
+- `.github/scripts/package-version-files.sh` lists the `VERSION` files for the shared workflows'
+  `version_files_command`: `changed` (packages the PR touches; a `packages/core` change adds every package that
+  depends on `oke-scanner-core`) for `bump-version`, `all` for `assemble-changelog` and the tag job.
+- `bump-version` (Renovate `dev-` branches only) patch-bumps each affected package and drops a fragment in
+  `packages/<pkg>/changelog.d/`. A PR that touches no package (root dev tooling, workflows) bumps nothing.
+- `assemble-changelog` folds every package's fragments in one `docs: assemble changelog for N package(s)` commit.
+- The `tag` job in `release.yml` is inline because the shared `tag.yml` reads one version file and tags bare
+  `vX.Y.Z`. It defers while any fragment is pending, then creates each missing `<pkg>-v<VERSION>` tag.
+- Human PRs bump by hand: edit `packages/<pkg>/VERSION` and add a `packages/<pkg>/changelog.d/<name>.md`
+  fragment. A fragment without a bump fails the fold, by design.
+- Image tags are unchanged (`latest` + short SHA). The package version is not an image tag.
 
 ## Code Quality
 

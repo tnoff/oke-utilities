@@ -13,13 +13,10 @@ build-backend = "setuptools.build_meta"
 # `oke-utilities` (the repo) or `oke-scan` (packages/scan's own pip name)
 # so it can't collide with either in the same tox venv.
 name = "oke-utilities-dev"
-# Single source of truth: read from the VERSION file (CI bumps it via the
-# bump-version job in .github/workflows/ci.yml; release.yml tags from it).
-# That workflow reads/writes VERSION directly as text, never this pyproject
-# -- this dynamic-version wiring is only for a local `pip install .` at repo
-# root, which nothing does anymore, but it's left in place rather than
-# ripped out along with everything else that changed here.
-dynamic = ["version"]
+# Never released: each package under packages/ carries its own VERSION and
+# CHANGELOG.md, and CI bumps, folds and tags those. This placeholder only
+# satisfies setuptools for tox's editable install of the `dev` extra.
+version = "0.0.0"
 requires-python = ">=3.13"
 
 [project.optional-dependencies]
@@ -33,9 +30,6 @@ dev = [
     "pytest-mock==3.17.0",
     "pytest-asyncio==1.5.0",
 ]
-
-[tool.setuptools.dynamic]
-version = { file = "VERSION" }
 
 [tool.setuptools]
 packages = []

@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ocir-cleanup"
-version = "0.1.0"
+# Read from VERSION beside this file -- that is what CI bumps and tags.
+dynamic = ["version"]
 requires-python = ">=3.13"
 dependencies = [
     "oke-scanner-core[telemetry]",
@@ -24,6 +25,9 @@ dev = [
     "pytest-cov==7.1.0",
     "pytest-mock==3.17.0",
 ]
+
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -221,13 +221,19 @@ jobs:
     name: Bump version
     # Matches the GitLab rule. The dev- prefix comes from the shared renovate
     # python preset and is load-bearing: it is what decides whether an update
-    # bumps VERSION, writes a changelog fragment, and therefore cuts a release.
+    # bumps a version, writes a changelog fragment, and therefore cuts a release.
+    #
+    # Per-package: the script prints the packages/<pkg>/VERSION of every
+    # package the PR touches (plus core's dependents when core changes), and
+    # each gets its own patch bump and its own fragment under
+    # packages/<pkg>/changelog.d/. A PR touching no package bumps nothing.
     if: startsWith(github.head_ref, 'renovate/dev-')
     permissions:
       contents: write
     uses: tnoff/github-workflows/.github/workflows/bump-version.yml@c804443f159eee3ebaece0dc57174cfc3387f4b3  # bump-version-v1.1.1
     with:
       bump_changelog: true
+      version_files_command: .github/scripts/package-version-files.sh changed
     secrets:
       app_client_id: ${{ secrets.CI_APP_CLIENT_ID }}
       app_private_key: ${{ secrets.CI_APP_PRIVATE_KEY }}

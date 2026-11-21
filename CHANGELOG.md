@@ -1,6 +1,11 @@
 # Changelog
 
-All notable changes to the OKE Security Scanner will be documented in this file.
+> **Frozen at 0.10.19.** Every package now has its own version and changelog:
+> `packages/<pkg>/VERSION` and `packages/<pkg>/CHANGELOG.md`, tagged `<pkg>-vX.Y.Z`
+> (e.g. `core-v0.3.0`, `scan-v0.1.0`). This file is kept as the history of the
+> repo-wide release stream and is no longer updated.
+
+All notable changes to the OKE Security Scanner through 0.10.19 are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

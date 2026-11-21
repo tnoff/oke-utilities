@@ -17,8 +17,10 @@ FROM python:3.15-slim AS py-builder
 
 WORKDIR /build
 COPY packages/core/pyproject.toml packages/core/pyproject.toml
+COPY packages/core/VERSION packages/core/VERSION
 COPY packages/core/src packages/core/src
 COPY packages/scan/pyproject.toml packages/scan/pyproject.toml
+COPY packages/scan/VERSION packages/scan/VERSION
 COPY packages/scan/src packages/scan/src
 RUN pip install --no-cache-dir --prefix=/install ./packages/core ./packages/scan
 

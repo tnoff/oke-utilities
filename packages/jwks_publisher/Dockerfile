@@ -10,6 +10,7 @@ RUN apt-get update && \
 
 WORKDIR /build
 COPY packages/jwks_publisher/pyproject.toml packages/jwks_publisher/pyproject.toml
+COPY packages/jwks_publisher/VERSION packages/jwks_publisher/VERSION
 COPY packages/jwks_publisher/src packages/jwks_publisher/src
 RUN pip install --no-cache-dir --prefix=/install ./packages/jwks_publisher
 

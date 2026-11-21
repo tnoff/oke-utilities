@@ -9,6 +9,7 @@ RUN apt-get update && \
 
 WORKDIR /build
 COPY packages/rpst_sidecar/pyproject.toml packages/rpst_sidecar/pyproject.toml
+COPY packages/rpst_sidecar/VERSION packages/rpst_sidecar/VERSION
 COPY packages/rpst_sidecar/src packages/rpst_sidecar/src
 RUN pip install --no-cache-dir --prefix=/install ./packages/rpst_sidecar
 

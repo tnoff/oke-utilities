@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oke-scan"
-version = "0.1.0"
+# Read from VERSION beside this file -- that is what CI bumps and tags.
+dynamic = ["version"]
 requires-python = ">=3.13"
 dependencies = [
     "oke-scanner-core[telemetry]",
@@ -13,6 +14,9 @@ dependencies = [
     # bumped past the freeze. Verified installable at 1.1.4 from this URL.
     "dappertable @ https://github.com/tnoff/dappertable/archive/refs/tags/v1.1.13.tar.gz",
 ]
+
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

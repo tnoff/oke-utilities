@@ -11,8 +11,10 @@ RUN apt-get update && \
 
 WORKDIR /build
 COPY packages/core/pyproject.toml packages/core/pyproject.toml
+COPY packages/core/VERSION packages/core/VERSION
 COPY packages/core/src packages/core/src
 COPY packages/secret_age/pyproject.toml packages/secret_age/pyproject.toml
+COPY packages/secret_age/VERSION packages/secret_age/VERSION
 COPY packages/secret_age/src packages/secret_age/src
 RUN pip install --no-cache-dir --prefix=/install ./packages/core ./packages/secret_age
 
