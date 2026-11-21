@@ -1,0 +1,1 @@
+rpst-sidecar is rewritten in Go (standard library only) on a distroless image, replacing Python and `cryptography`; same env vars, files, `--check`/`--once`, exit codes and log lines, redirects from the token endpoint are no longer followed, and `python -m rpst_sidecar ...` still works through a `python` link to the binary until manifests move to `rpst-sidecar ...`

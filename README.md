@@ -18,7 +18,7 @@ TechDocs site at `techdocs/oke-utilities`); this repo holds the code and images.
 | Cache Management | No | Security Scanner only. Automatic cleanup of Trivy image cache after each scan to minimize disk usage. |
 | Secret-age Tracker | Yes | Its own package/image (`packages/secret_age/`, `python -m secret_age`). Reports credential ages across OCI IAM credentials, Kubernetes Secrets (by the `secret-age-tracker.tnoff/last-rotated` annotation, falling back to `creationTimestamp`), and operator-tracked admin tfvars (a ledger ConfigMap). See [Secret-age tracker](#secret-age-tracker). |
 | JWKS publisher | Yes | Its own package/image (`packages/jwks_publisher/`, `python -m jwks_publisher`). Mirrors the cluster's ServiceAccount public key set into the Object Storage object that OCI Identity Domains fetches on every token exchange. See [JWKS publisher](#jwks-publisher). |
-| RPST sidecar | No | Its own package/image (`packages/rpst_sidecar/`, `python -m rpst_sidecar`). A sidecar that trades the pod's projected ServiceAccount token for an OCI resource principal session token on a loop, so the main container needs no stored API key. See the "RPST sidecar" section. |
+| RPST sidecar | No | Its own Go module/image (`packages/rpst_sidecar/`, `rpst-sidecar`). A sidecar that trades the pod's projected ServiceAccount token for an OCI resource principal session token on a loop, so the main container needs no stored API key. See the "RPST sidecar" section. |
 | Audit watch | Yes | Its own package/image (`packages/audit_watch/`, `python -m audit_watch`). A CronJob that summarises what OCI resource principals did in the Audit log and warns on denied calls and unexpected writes. See [Audit watch](#audit-watch). |
 
 The scanner, cleanup and secret-age tracker share `packages/core/` (`oke-scanner-core`: image discovery, k8s
@@ -246,8 +246,9 @@ covers onboarding a workload, the policy rules and failure modes). The sidecar t
 token for an OCI resource principal session token (RPST) at the identity
 domain's token endpoint, writes it and its private key to a shared in-memory
 volume, and repeats before it expires. The main container then signs OCI SDK
-calls with no stored API key. Only `cryptography` is installed: HTTP is urllib,
-and there is no OCI SDK in the image.
+calls with no stored API key. It is a static Go binary using only the standard
+library, on a distroless image: no shell, no Python, no OCI SDK. Redirects from
+the token endpoint are never followed (the request carries the client secret).
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -278,14 +279,21 @@ logs one audit line (`jti`, the ServiceAccount token's `sub`, namespace, pod,
 service account, issued and expires in UTC, lifetime in minutes). SIGTERM and
 SIGINT stop it cleanly with exit code 0.
 
-`python -m rpst_sidecar --check` starts no server: it exits 0 only if `rpst`
+`rpst-sidecar --check` starts no server: it exits 0 only if `rpst`
 and `private.pem` exist and the token has more than 60 seconds left, otherwise
 exits 1 with one line saying why.
 
-`python -m rpst_sidecar --once` does a single exchange and exits: 0 once an
+`rpst-sidecar --once` does a single exchange and exits: 0 once an
 `rpst` is written, 1 if the exchange (or the write) fails, with no retries. It is
 a canary for the whole chain (ServiceAccount token, trust, JWKS fetch, exchange
 secret); run it from a CronJob and alert on the Job failing or going stale.
+
+Up to 0.10.19 the sidecar was Python. The image still answers the old command
+line: `python` is a link to the binary, which drops a leading `-m rpst_sidecar`,
+so probes and `command:`/`args:` written as `python -m rpst_sidecar --check`
+keep working. Switch manifests to `rpst-sidecar ...`; the link will be removed
+once nothing uses it. Log lines keep the Python format
+(`<time> - rpst_sidecar.main - <LEVEL> - <message>`) and the same messages.
 
 ### Pod wiring
 
@@ -299,7 +307,7 @@ secret); run it from a CronJob and alert on the Job failing or going stale.
   `0640` files.
 - Run it as a native sidecar: an `initContainers` entry with
   `restartPolicy: Always`, with `startupProbe` and `livenessProbe` exec probes
-  running `python -m rpst_sidecar --check`. The startup probe holds the main
+  running `rpst-sidecar --check`. The startup probe holds the main
   container back until the first token exists; the liveness probe restarts a
   sidecar that cannot refresh before the token expires.
 
@@ -316,11 +324,11 @@ initContainers:
       - {name: POD_NAMESPACE, valueFrom: {fieldRef: {fieldPath: metadata.namespace}}}
       - {name: SERVICE_ACCOUNT_NAME, valueFrom: {fieldRef: {fieldPath: spec.serviceAccountName}}}
     startupProbe:
-      exec: {command: [python, -m, rpst_sidecar, --check]}
+      exec: {command: [rpst-sidecar, --check]}
       periodSeconds: 5
       failureThreshold: 120
     livenessProbe:
-      exec: {command: [python, -m, rpst_sidecar, --check]}
+      exec: {command: [rpst-sidecar, --check]}
       periodSeconds: 60
 volumes:
   - name: rpst-out

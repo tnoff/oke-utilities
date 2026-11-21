@@ -16,10 +16,16 @@ Scan, cleanup and secret-age-tracker are separate installable packages (see
 pip install -e ".[dev]" -e packages/core[telemetry] -e packages/scan
 ```
 
-To also work on cleanup, secret-age-tracker, the JWKS publisher or the RPST sidecar:
+To also work on cleanup, secret-age-tracker or the JWKS publisher:
 
 ```bash
-pip install -e packages/ocir_cleanup -e packages/secret_age -e packages/jwks_publisher -e packages/rpst_sidecar
+pip install -e packages/ocir_cleanup -e packages/secret_age -e packages/jwks_publisher
+```
+
+The RPST sidecar is Go (standard library only, Go 1.24 or newer) and is not part of tox:
+
+```bash
+cd packages/rpst_sidecar && go vet ./... && go test -race ./...
 ```
 
 ## Running tests
@@ -55,7 +61,7 @@ python -m scan             # scanner
 python -m ocir_cleanup     # OCIR cleanup (pip install -e packages/ocir_cleanup first)
 python -m secret_age       # secret-age tracker (pip install -e packages/secret_age first)
 python -m jwks_publisher   # JWKS publisher (pip install -e packages/jwks_publisher first; set JWKS_BUCKET, DRY_RUN=true to preview)
-python -m rpst_sidecar     # RPST sidecar (pip install -e packages/rpst_sidecar first; set RPST_DOMAIN_URL, point RPST_CLIENT_DIR / SERVICE_ACCOUNT_TOKEN_FILE / OUTPUT_DIR at local files)
-python -m rpst_sidecar --check  # exit 0 only if OUTPUT_DIR holds a fresh rpst and private.pem
-python -m rpst_sidecar --once   # one exchange, exit 0/1 (canary)
+(cd packages/rpst_sidecar && go run .)  # RPST sidecar (set RPST_DOMAIN_URL, point RPST_CLIENT_DIR / SERVICE_ACCOUNT_TOKEN_FILE / OUTPUT_DIR at local files)
+(cd packages/rpst_sidecar && go run . --check)  # exit 0 only if OUTPUT_DIR holds a fresh rpst and private.pem
+(cd packages/rpst_sidecar && go run . --once)   # one exchange, exit 0/1 (canary)
 ```
