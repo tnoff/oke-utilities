@@ -3,6 +3,8 @@
 
 # Explicit text files
 *.py        text diff=python
+*.go        text diff=golang
+go.mod      text
 *.md        text
 *.yaml      text
 *.yml       text
