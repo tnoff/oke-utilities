@@ -35,9 +35,6 @@ The RPST sidecar is Go (standard library only, Go 1.24 or newer) and is not part
 cd packages/rpst_sidecar && go vet ./... && go test -race ./...
 ```
 
-For one real exchange against the identity domain, use `packages/rpst_sidecar/scripts/oci-smoke.sh` (see the
-README's RPST sidecar section).
-
 ## Running tests
 
 Run the full suite (pytest, pylint, bandit):

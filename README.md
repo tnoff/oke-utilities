@@ -295,28 +295,6 @@ keep working. Switch manifests to `rpst-sidecar ...`; the link will be removed
 once nothing uses it. Log lines keep the Python format
 (`<time> - rpst_sidecar.main - <LEVEL> - <message>`) and the same messages.
 
-### Testing against OCI from a laptop
-
-`packages/rpst_sidecar/scripts/oci-smoke.sh` does one real exchange outside the
-cluster and then signs a real OCI call with the result. It mints a token for an
-onboarded workload's ServiceAccount (`kubectl create token --audience
-<domain>`), copies the exchange app's credentials from its Secret, runs
-`--once` and `--check` (and, with `IMAGE`, the legacy `python -m rpst_sidecar
---check`), and finally calls Object Storage `GetNamespace` through the OCI
-Python SDK's resource principal signer, as a main container would. It needs
-`kubectl` access to the cluster, plus Go or Docker, plus `pip install oci` for
-the last step:
-
-```bash
-RPST_DOMAIN_URL=https://idcs-xxxx.identity.oraclecloud.com:443 \
-NAMESPACE=<ns> SERVICE_ACCOUNT=<sa> CLIENT_SECRET=<secret-name> OCI_REGION=<region> \
-IMAGE=rpst-go \
-  packages/rpst_sidecar/scripts/oci-smoke.sh   # leave IMAGE unset to use `go run .`
-```
-
-Build the image first with `docker build -t rpst-go -f packages/rpst_sidecar/Dockerfile .`.
-Nothing secret is printed, and the temp directory is removed on exit.
-
 ### Pod wiring
 
 - A projected `serviceAccountToken` volume with `audience` set to
