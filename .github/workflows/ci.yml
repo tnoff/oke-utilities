@@ -76,10 +76,14 @@ jobs:
   # Python base rather than this repo's requirement -- kubernetes, oci,
   # requests, python-gitlab, dappertable and the OpenTelemetry SDK are all
   # pure-Python wheels, and nothing here touches ffmpeg or a database.
+  #
+  # Skipped when only packages/rpst_sidecar/ changed (`changes` decides; see its TOX flag).
+  # Skipped scores as success in `result`, same as the image builds. If `changes` fails,
+  # tox is skipped but `result` still fails on `changes`.
   tox:
     name: Tox
-    needs: metadata
-    if: needs.metadata.outputs.only != 'true'
+    needs: [metadata, changes]
+    if: needs.metadata.outputs.only != 'true' && needs.changes.outputs.tox == 'true'
     uses: tnoff/github-workflows/.github/workflows/tox.yml@fd3bbf52e18c2edfa3d6fe015bed6f7056cfa777  # tox-v1.0.2
 
   # Reimplements .image-build-rules' `changes:` block: only rebuild when
@@ -103,6 +107,7 @@ jobs:
       jwks_publisher_image: ${{ steps.filter.outputs.jwks_publisher_image }}
       rpst_sidecar_image: ${{ steps.filter.outputs.rpst_sidecar_image }}
       audit_watch_image: ${{ steps.filter.outputs.audit_watch_image }}
+      tox: ${{ steps.filter.outputs.tox }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -130,8 +135,17 @@ jobs:
           JWKS_PUBLISHER_IMAGE=false
           RPST_SIDECAR_IMAGE=false
           AUDIT_WATCH_IMAGE=false
+          # Tox covers the Python packages only. It is skipped solely when every changed
+          # file is under packages/rpst_sidecar/ (Go, gated by its Dockerfile build);
+          # anything else, including an empty or unreadable diff, runs it.
+          TOX=false
+          [ -n "${FILES}" ] || TOX=true
           while IFS= read -r f; do
             [ -n "$f" ] || continue
+            case "$f" in
+              packages/rpst_sidecar/*) ;;
+              *) TOX=true ;;
+            esac
             case "$f" in
               packages/scan/*) IMAGE=true ;;
             esac
@@ -156,12 +170,14 @@ jobs:
           echo "jwks-publisher image inputs changed: ${JWKS_PUBLISHER_IMAGE}"
           echo "rpst-sidecar image inputs changed: ${RPST_SIDECAR_IMAGE}"
           echo "audit-watch image inputs changed: ${AUDIT_WATCH_IMAGE}"
+          echo "tox needed: ${TOX}"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "secret_age_image=${SECRET_AGE_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "ocir_cleanup_image=${OCIR_CLEANUP_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "jwks_publisher_image=${JWKS_PUBLISHER_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "rpst_sidecar_image=${RPST_SIDECAR_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "audit_watch_image=${AUDIT_WATCH_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tox=${TOX}" >> "$GITHUB_OUTPUT"
 
   # GitLab ran the build and the image scan as two jobs, shipping the image
   # between them as a tarball through an object-storage bucket.
