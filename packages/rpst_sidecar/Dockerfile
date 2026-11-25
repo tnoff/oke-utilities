@@ -8,9 +8,6 @@ WORKDIR /build
 COPY packages/rpst_sidecar/ ./
 RUN go vet ./... && go test -count=1 ./...
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$(cat VERSION)" -o /out/rpst-sidecar .
-# Probes and commands written for the Python image run `python -m rpst_sidecar ...`; the binary
-# drops that prefix. Remove this link once no manifest calls `python` any more.
-RUN ln -s rpst-sidecar /out/python
 
 
 # Static binary, CA bundle, no shell, no package manager.
@@ -27,5 +24,5 @@ LABEL org.opencontainers.image.source="https://github.com/tnoff/oke-utilities" \
       org.opencontainers.image.description="Trades a projected ServiceAccount token for an OCI resource principal session token on a loop (tnoff/terraform#191)"
 
 # CMD, not ENTRYPOINT, as before: a pod spec's `args:` replaces the whole command line, and
-# `args: [python, -m, rpst_sidecar, --once]` must keep working.
+# `args: [rpst-sidecar, --once]` names the binary itself.
 CMD ["rpst-sidecar"]

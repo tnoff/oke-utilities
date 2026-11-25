@@ -69,18 +69,6 @@ func TestMainCheckUnhealthyPrintsOneLine(t *testing.T) {
 	}
 }
 
-func TestMainAcceptsThePythonImageCommandLine(t *testing.T) {
-	captureLog(t)
-	envFor(t, testConfig(t, "https://d.example"), nil)
-	var out bytes.Buffer
-	if code := realMain(context.Background(), []string{"-m", "rpst_sidecar", "--check"}, &out); code != 1 {
-		t.Fatalf("exit %d", code)
-	}
-	if !strings.HasPrefix(out.String(), "unhealthy: ") {
-		t.Fatalf("output %q", out.String())
-	}
-}
-
 func TestMainOnceSucceedsAfterOneExchange(t *testing.T) {
 	logs := captureLog(t)
 	fake := newFakeDomain(t, ok(rpstFor("a", testNow, testNow+3600)))
