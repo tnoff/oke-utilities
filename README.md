@@ -288,11 +288,9 @@ exits 1 with one line saying why.
 a canary for the whole chain (ServiceAccount token, trust, JWKS fetch, exchange
 secret); run it from a CronJob and alert on the Job failing or going stale.
 
-Through `rpst_sidecar` 0.1.0 (repo version 0.10.19) the sidecar was Python. The image still answers the old command
-line: `python` is a link to the binary, which drops a leading `-m rpst_sidecar`,
-so probes and `command:`/`args:` written as `python -m rpst_sidecar --check`
-keep working. Switch manifests to `rpst-sidecar ...`; the link will be removed
-once nothing uses it. Log lines keep the Python format
+Through `rpst_sidecar` 0.1.0 (repo version 0.10.19) the sidecar was Python; the
+image no longer answers `python -m rpst_sidecar ...`, so probes and `command:`/`args:`
+must call `rpst-sidecar ...`. Log lines keep the Python format
 (`<time> - rpst_sidecar.main - <LEVEL> - <message>`) and the same messages.
 
 ### Pod wiring

@@ -40,16 +40,6 @@ func logInfo(format string, args ...any)    { logLine("INFO", format, args...) }
 func logWarning(format string, args ...any) { logLine("WARNING", format, args...) }
 func logError(format string, args ...any)   { logLine("ERROR", format, args...) }
 
-// legacyArgs drops a leading `-m rpst_sidecar`. The image links `python` to this binary so probes
-// and commands written for the Python image (`python -m rpst_sidecar --check`) keep working until
-// the manifests that use them are updated.
-func legacyArgs(args []string) []string {
-	if len(args) >= 2 && args[0] == "-m" && args[1] == "rpst_sidecar" {
-		return args[2:]
-	}
-	return args
-}
-
 // realMain runs the sidecar, or with --check, probes the files it wrote. Returns the exit code.
 func realMain(ctx context.Context, args []string, stdout io.Writer) int {
 	flags := flag.NewFlagSet("rpst-sidecar", flag.ContinueOnError)
@@ -57,7 +47,7 @@ func realMain(ctx context.Context, args []string, stdout io.Writer) int {
 	onceFlag := flags.Bool("once", false,
 		"do one token exchange and exit 0 on success, 1 on failure (a canary for the whole chain)")
 	versionFlag := flags.Bool("version", false, "print the version and exit")
-	if err := flags.Parse(legacyArgs(args)); err != nil {
+	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return 0
 		}
