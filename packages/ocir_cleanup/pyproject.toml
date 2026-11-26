@@ -12,7 +12,7 @@ dependencies = [
     # bumped by Renovate (renovate.json). Keep scan, secret_age and
     # ocir_cleanup on the SAME tag -- tox installs all three in one env.
     "oke-scanner-core[telemetry] @ https://github.com/tnoff/oke-utilities/archive/refs/tags/core-v0.3.0.tar.gz#subdirectory=packages/core",
-    "oci==2.191.0",
+    "oci==2.192.0",
     "requests",
     # dappertable is GitHub-canonical. The GitLab copy still resolves, but its
     # tags stop at v1.1.5 while GitHub is on v1.1.6, so this pin could never be
